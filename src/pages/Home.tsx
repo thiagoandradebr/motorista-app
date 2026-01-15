@@ -14,7 +14,6 @@ export default function Home() {
     useEffect(() => {
         checkUser();
 
-        // Subscribe to auth changes to handle timeouts/logouts
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session);
             if (!session) navigate('/login');
@@ -27,13 +26,29 @@ export default function Home() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
             navigate('/login');
-        } else {
-            setSession(session);
+            return;
         }
+
+        // Check if this is first login (password not changed yet)
+        const user = session.user;
+        const passwordChanged = user.user_metadata?.password_changed;
+
+        if (!passwordChanged) {
+            // First login - redirect to change password
+            navigate('/change-password');
+            return;
+        }
+
+        setSession(session);
         setLoading(false);
     }
 
-    if (loading) return <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-white">Carregando...</div>;
+    if (loading) return (
+        <div className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-slate-950 text-white">
+            <div className="h-12 w-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-slate-400 animate-pulse">Sincronizando...</p>
+        </div>
+    );
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-100 pb-20">
