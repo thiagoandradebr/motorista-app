@@ -107,6 +107,20 @@
   #screen-pause { background: rgba(0,0,0,.72); }
   #screen-pause h2 { font-family: Impact, sans-serif; color: #ffd24a; font-size: 44px; letter-spacing: 4px; text-shadow: 3px 3px 0 #000; }
   #screen-pause p { color: #b89a7a; margin-top: 14px; font-size: 15px; }
+
+  .btn-secondary {
+    font-family: 'Courier New', monospace; font-size: 14px; letter-spacing: 2px;
+    color: #b89a7a; background: transparent; border: 1px solid #6e5a45;
+    padding: 8px 22px; cursor: pointer; margin-top: 16px;
+  }
+  .btn-secondary:hover { color: #ffd24a; border-color: #ffd24a; }
+
+  /* ---- Opções ---- */
+  #screen-options h2 { font-family: Impact, sans-serif; color: #ffd24a; font-size: 38px; letter-spacing: 4px; text-shadow: 3px 3px 0 #000; margin-bottom: 24px; }
+  .opt-row { display: flex; align-items: center; gap: 16px; width: 380px; max-width: 82vw; margin: 11px 0; color: #e8c9a0; font-size: 13px; letter-spacing: 1px; text-shadow: 1px 1px 0 #000; }
+  .opt-row label { width: 160px; text-align: right; }
+  .opt-row input[type=range] { flex: 1; accent-color: #c0402a; }
+  .opt-row span { width: 46px; text-align: left; color: #ffd24a; }
 </style>
 </head>
 <body>
@@ -150,10 +164,11 @@
 <div id="screen-start" class="screen">
   <div class="title">INFERNO<br>ETERNO</div>
   <div class="subtitle">UM CLONE RETRÔ DE DOOM &bull; THREE.JS &bull; 100% PROCEDURAL</div>
-  <button class="btn" id="btn-start">ENTRAR NO INFERNO</button>
+  <button class="btn" id="btn-start">ENTRAR NO INFERNO</button><br>
+  <button class="btn-secondary" id="btn-options-start">OPÇÕES</button>
   <div class="controls">
     <b>WASD / SETAS</b> mover &nbsp;&bull;&nbsp; <b>SHIFT</b> correr &nbsp;&bull;&nbsp; <b>MOUSE</b> mirar &nbsp;&bull;&nbsp; <b>CLIQUE</b> atirar<br>
-    <b>1-5 / RODA DO MOUSE</b> trocar arma &nbsp;&bull;&nbsp; <b>ESC</b> pausar<br><br>
+    <b>1-5 / RODA DO MOUSE</b> trocar arma &nbsp;&bull;&nbsp; <b>R</b> recarregar &nbsp;&bull;&nbsp; <b>ESC</b> pausar<br><br>
     Você começa só com soco e pistola — encontre escopeta, metralhadora e lança-foguetes pelo caminho.<br>
     <b>10 fases</b> cada vez maiores, terminando num <b>chefão</b>. Cuidado com os barris!
   </div>
@@ -174,6 +189,16 @@
 <div id="screen-pause" class="screen hidden">
   <h2>PAUSADO</h2>
   <p>Clique para voltar ao massacre</p>
+  <button class="btn-secondary" id="btn-options-pause">OPÇÕES</button>
+</div>
+
+<div id="screen-options" class="screen hidden">
+  <h2>OPÇÕES</h2>
+  <div class="opt-row"><label>MÚSICA</label><input type="range" id="opt-music" min="0" max="100" value="30"><span id="opt-music-val">30%</span></div>
+  <div class="opt-row"><label>EFEITOS SONOROS</label><input type="range" id="opt-sfx" min="0" max="100" value="90"><span id="opt-sfx-val">90%</span></div>
+  <div class="opt-row"><label>SENSIBILIDADE</label><input type="range" id="opt-sens" min="40" max="250" value="100"><span id="opt-sens-val">100%</span></div>
+  <div class="opt-row"><label>CAMPO DE VISÃO</label><input type="range" id="opt-fov" min="65" max="100" value="75"><span id="opt-fov-val">75°</span></div>
+  <button class="btn" id="btn-options-back" style="margin-top:26px;">VOLTAR</button>
 </div>
 
 <script>
@@ -891,6 +916,24 @@ const WEAPON_FRAMES = [
 ];
 const FACES = [drawFace(0), drawFace(1), drawFace(2), drawFace(3), drawFace(4)];
 
+/* ========================== OPÇÕES / CONFIGURAÇÕES ======================= */
+const DEFAULT_SETTINGS = { musicVol: 0.3, sfxVol: 0.9, sensMult: 1.0, fov: 75 };
+let settings = { ...DEFAULT_SETTINGS };
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem('infernoEterno.settings');
+    if (raw) settings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch (e) { /* localStorage indisponível (ex.: iframe restrito) */ }
+}
+function saveSettings() {
+  try { localStorage.setItem('infernoEterno.settings', JSON.stringify(settings)); } catch (e) {}
+}
+function applyAudioSettings() {
+  if (sfxBus) sfxBus.gain.value = settings.sfxVol;
+  if (musicBus) musicBus.gain.value = settings.musicVol;
+}
+loadSettings();
+
 /* ========================= 4) MOTOR DE ÁUDIO ============================= */
 let AC = null, sfxBus = null, musicBus = null, noiseBuf = null, gtrChain = null;
 
@@ -900,8 +943,8 @@ function initAudio() {
     AC = new (window.AudioContext || window.webkitAudioContext)();
   } catch (e) { return; }
   const master = AC.createGain(); master.gain.value = 0.6; master.connect(AC.destination);
-  sfxBus = AC.createGain(); sfxBus.gain.value = 0.9; sfxBus.connect(master);
-  musicBus = AC.createGain(); musicBus.gain.value = 0.3; musicBus.connect(master);
+  sfxBus = AC.createGain(); sfxBus.gain.value = settings.sfxVol; sfxBus.connect(master);
+  musicBus = AC.createGain(); musicBus.gain.value = settings.musicVol; musicBus.connect(master);
   noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -977,7 +1020,12 @@ const SFX = {
   playerPain() { if (!AC) return; const d = busFor(null), t = AC.currentTime; tone(d, t, 'square', 190, 70, 0.22, 0.4); noise(d, t, 'lowpass', 700, 250, 0.18, 0.25); },
   pickup() { if (!AC) return; const d = busFor(null), t = AC.currentTime; tone(d, t, 'square', 520, null, 0.07, 0.25, 0.002); tone(d, t + 0.08, 'square', 780, null, 0.1, 0.25, 0.002); },
   click() { if (!AC) return; const d = busFor(null), t = AC.currentTime; tone(d, t, 'square', 900, 500, 0.04, 0.12, 0.002); },
-  wSwitch() { if (!AC) return; const d = busFor(null), t = AC.currentTime; noise(d, t, 'bandpass', 1200, 500, 0.09, 0.2, 2); }
+  wSwitch() { if (!AC) return; const d = busFor(null), t = AC.currentTime; noise(d, t, 'bandpass', 1200, 500, 0.09, 0.2, 2); },
+  reload(dur) {
+    if (!AC) return; const d = busFor(null), t = AC.currentTime;
+    noise(d, t, 'bandpass', 1000, 600, 0.08, 0.28, 3); tone(d, t, 'square', 200, 140, 0.05, 0.14);
+    noise(d, t + dur * 0.55, 'bandpass', 1500, 900, 0.09, 0.32, 3); tone(d, t + dur * 0.75, 'square', 260, 160, 0.06, 0.18);
+  }
 };
 
 // ---- trilha "metal" sintetizada em loop ----
@@ -1038,6 +1086,7 @@ document.addEventListener('keydown', e => {
     const n = parseInt(e.code.slice(5), 10);
     if (n >= 1 && n <= 5) selectWeapon(n - 1);
   }
+  if (e.code === 'KeyR') tryReload();
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
 });
 document.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -1052,8 +1101,9 @@ document.addEventListener('wheel', e => {
 }, { passive: true });
 document.addEventListener('mousemove', e => {
   if (!locked || !playing) return;
-  player.yaw -= e.movementX * 0.0022;
-  player.pitch -= e.movementY * 0.0022;
+  const s = 0.0022 * settings.sensMult;
+  player.yaw -= e.movementX * s;
+  player.pitch -= e.movementY * s;
   player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch));
 });
 document.addEventListener('pointerlockchange', () => {
@@ -1078,8 +1128,9 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
 $('viewport').appendChild(renderer.domElement);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 120);
+const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.1, 120);
 camera.rotation.order = 'YXZ';
+function applyFov() { camera.fov = settings.fov; camera.updateProjectionMatrix(); }
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -1274,6 +1325,7 @@ const player = {
   x: 0, z: 0, yaw: 0, pitch: 0, hp: 100, armor: 0, alive: true,
   vx: 0, vz: 0, weapon: 1, cd: 0, fireT: -1, switchT: 0, bob: 0,
   ammo: { bullets: 40, shells: 0, rockets: 0 },
+  mag: [0, 12, 6, 40, 0], reloading: false,
   owned: [true, true, false, false, false],
   painSndCd: 0, ouchT: 0, deathT: 0,
   kickPitch: 0, kickYaw: 0, curSpeed: 0, chainHeat: 0
@@ -1368,10 +1420,10 @@ function spawnProjectile(kind, x, y, z, dx, dy, dz) {
 /* =========================== 9) COMBATE ================================== */
 const WEAPONS = [
   { name: 'SOCO INGLÊS', rate: 0.45, range: 2.8, pellets: 1, spread: 0, ammo: null, dmg: () => 28 + Math.random() * 18, animA: 0.12, animB: 0.3 },
-  { name: 'PISTOLA', rate: 0.38, range: 60, pellets: 1, spread: 0.02, ammo: 'bullets', use: 1, dmg: () => 9 + Math.random() * 7, animA: 0.07, animB: 0.16 },
-  { name: 'ESCOPETA', rate: 1.0, range: 42, pellets: 7, spread: 0.09, ammo: 'shells', use: 1, dmg: () => 6 + Math.random() * 6, animA: 0.14, animB: 0.55 },
+  { name: 'PISTOLA', rate: 0.38, range: 60, pellets: 1, spread: 0.02, ammo: 'bullets', use: 1, magSize: 12, reloadTime: 1.0, dmg: () => 9 + Math.random() * 7, animA: 0.07, animB: 0.16 },
+  { name: 'ESCOPETA', rate: 1.0, range: 42, pellets: 7, spread: 0.09, ammo: 'shells', use: 1, magSize: 6, reloadTime: 1.5, dmg: () => 6 + Math.random() * 6, animA: 0.14, animB: 0.55 },
   // metralhadora "giratória": começa lenta (rateMax) e acelera até rateMin enquanto o gatilho fica pressionado
-  { name: 'METRALHADORA', rate: 0.14, rateMin: 0.058, rateMax: 0.14, range: 60, pellets: 1, spread: 0.055, ammo: 'bullets', use: 1, dmg: () => 8 + Math.random() * 6, animA: 0.045, animB: 0.09 },
+  { name: 'METRALHADORA', rate: 0.14, rateMin: 0.058, rateMax: 0.14, range: 60, pellets: 1, spread: 0.055, ammo: 'bullets', use: 1, magSize: 40, reloadTime: 2.2, dmg: () => 8 + Math.random() * 6, animA: 0.045, animB: 0.09 },
   { name: 'LANÇA-FOGUETES', rate: 0.95, projectile: true, ammo: 'rockets', use: 1, animA: 0.1, animB: 0.4 }
 ];
 // recuo de câmera por arma: soco, pistola, escopeta, metralhadora, foguete
@@ -1388,8 +1440,23 @@ function selectWeapon(i) {
   player.weapon = i;
   player.switchT = 0.3;
   player.cd = Math.max(player.cd, 0.3);
+  player.reloading = false;
   SFX.wSwitch();
   updateHud();
+}
+
+function startReload() {
+  const w = WEAPONS[player.weapon];
+  if (!w.magSize || player.reloading || player.cd > 0) return;
+  if (player.mag[player.weapon] >= w.magSize || player.ammo[w.ammo] <= 0) { if (player.ammo[w.ammo] <= 0) SFX.click(); return; }
+  player.reloading = true;
+  player.cd = w.reloadTime;
+  SFX.reload(w.reloadTime);
+  updateHud();
+}
+function tryReload() {
+  if (!playing || !player.alive || startGrace > 0) return;
+  startReload();
 }
 
 const _dir = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3();
@@ -1441,12 +1508,18 @@ function hitscan(ox, oy, oz, dx, dy, dz, range, dmg, fatRadius, tracer) {
 }
 
 function tryFire() {
-  if (!playing || !player.alive || player.cd > 0 || startGrace > 0) return;
+  if (!playing || !player.alive || player.cd > 0 || startGrace > 0 || player.reloading) return;
   const w = WEAPONS[player.weapon];
-  if (w.ammo && player.ammo[w.ammo] < (w.use || 1)) { SFX.click(); player.cd = 0.3; return; }
+  if (w.magSize) {
+    if (player.mag[player.weapon] < (w.use || 1)) {
+      if (player.ammo[w.ammo] > 0) startReload(); else SFX.click();
+      return;
+    }
+  } else if (w.ammo && player.ammo[w.ammo] < (w.use || 1)) { SFX.click(); player.cd = 0.3; return; }
   player.cd = player.weapon === 3 ? w.rateMin + (w.rateMax - w.rateMin) * (1 - player.chainHeat) : w.rate;
   player.fireT = 0.0001;
-  if (w.ammo) player.ammo[w.ammo] -= (w.use || 1);
+  if (w.magSize) player.mag[player.weapon] -= (w.use || 1);
+  else if (w.ammo) player.ammo[w.ammo] -= (w.use || 1);
   stats.shots++;
   alertNear(player.x, player.z, 13);
   addRecoil(player.weapon);
@@ -1765,7 +1838,8 @@ let lastFace = -1;
 
 function updateHud() {
   const w = WEAPONS[player.weapon];
-  hudEls.ammo.textContent = w.ammo ? player.ammo[w.ammo] : '∞';
+  if (w.magSize) hudEls.ammo.textContent = (player.reloading ? '…' : player.mag[player.weapon]) + '/' + player.ammo[w.ammo];
+  else hudEls.ammo.textContent = w.ammo ? player.ammo[w.ammo] : '∞';
   hudEls.health.textContent = Math.max(0, Math.round(player.hp)) + '%';
   hudEls.armor.textContent = Math.max(0, Math.round(player.armor)) + '%';
   hudEls.wname.textContent = w.name;
@@ -1863,6 +1937,10 @@ function drawWeaponView(dt, moveSpeed) {
   const wx = Math.sin(player.bob * 0.5) * 9 * bobA;
   let wy = Math.abs(Math.cos(player.bob * 0.5)) * 7 * bobA;
   if (player.switchT > 0) { player.switchT -= dt; wy += Math.sin(Math.min(1, Math.max(0, player.switchT / 0.3)) * Math.PI) * 70; }
+  if (player.reloading && w.reloadTime) {
+    const prog = Math.min(1, Math.max(0, 1 - player.cd / w.reloadTime));
+    wy += Math.sin(prog * Math.PI) * 55;
+  }
   if (!player.alive) wy += Math.min(120, player.deathT * 260);
   wvCtx.clearRect(0, 0, 160, 112);
   wvCtx.drawImage(WEAPON_FRAMES[player.weapon][frame], Math.round(wx), Math.round(wy));
@@ -1962,11 +2040,11 @@ function updateItems(dt, now) {
         used = true; msg('MUNIÇÃO COLETADA');
       }
       else if (it.type === 'wshotgun' && !player.owned[2]) {
-        player.owned[2] = true; player.ammo.shells = Math.min(50, player.ammo.shells + 8);
+        player.owned[2] = true; player.mag[2] = WEAPONS[2].magSize; player.ammo.shells = Math.min(50, player.ammo.shells + 8);
         used = true; msg('ESCOPETA ADQUIRIDA!'); selectWeapon(2);
       }
       else if (it.type === 'wchaingun' && !player.owned[3]) {
-        player.owned[3] = true; player.ammo.bullets = Math.min(400, player.ammo.bullets + 40);
+        player.owned[3] = true; player.mag[3] = WEAPONS[3].magSize; player.ammo.bullets = Math.min(400, player.ammo.bullets + 40);
         used = true; msg('METRALHADORA ADQUIRIDA!'); selectWeapon(3);
       }
       else if (it.type === 'wrocket' && !player.owned[4]) {
@@ -2010,6 +2088,15 @@ function frame(now) {
     if (player.painSndCd > 0) player.painSndCd -= dt;
     if (player.ouchT > 0) player.ouchT -= dt;
     if (player.cd > 0) player.cd -= dt;
+    if (player.reloading && player.cd <= 0) {
+      const w = WEAPONS[player.weapon];
+      const need = w.magSize - player.mag[player.weapon];
+      const take = Math.min(need, player.ammo[w.ammo]);
+      player.mag[player.weapon] += take;
+      player.ammo[w.ammo] -= take;
+      player.reloading = false;
+      updateHud();
+    }
 
     const chainFiring = firing && player.weapon === 3 && player.alive;
     player.chainHeat = Math.max(0, Math.min(1, player.chainHeat + (chainFiring ? dt / 0.55 : -dt / 0.35)));
@@ -2106,10 +2193,12 @@ function loadLevel(idx, freshStart) {
   player.fireT = -1; player.switchT = 0; player.bob = 0;
   player.painSndCd = 0; player.ouchT = 0; player.deathT = 0;
   player.kickPitch = 0; player.kickYaw = 0; player.curSpeed = 0; player.chainHeat = 0;
+  player.reloading = false;
 
   if (freshStart) {
     player.hp = 100; player.armor = 0; player.alive = true; player.weapon = 1;
     player.ammo = { bullets: 40, shells: 0, rockets: 0 };
+    player.mag = [0, 12, 6, 40, 0];
     player.owned = [true, true, false, false, false];
     campaign.totalKills = 0; campaign.totalItems = 0; campaign.totalTime = 0;
   } else {
@@ -2186,6 +2275,41 @@ $('btn-next-level').addEventListener('click', () => {
   $('screen-intermission').classList.add('hidden');
   advanceLevel();
 });
+
+// ---- menu de opções ----
+const optEls = {
+  music: $('opt-music'), musicVal: $('opt-music-val'),
+  sfx: $('opt-sfx'), sfxVal: $('opt-sfx-val'),
+  sens: $('opt-sens'), sensVal: $('opt-sens-val'),
+  fov: $('opt-fov'), fovVal: $('opt-fov-val')
+};
+function syncOptionsUI() {
+  optEls.music.value = Math.round(settings.musicVol * 100); optEls.musicVal.textContent = optEls.music.value + '%';
+  optEls.sfx.value = Math.round(settings.sfxVol * 100); optEls.sfxVal.textContent = optEls.sfx.value + '%';
+  optEls.sens.value = Math.round(settings.sensMult * 100); optEls.sensVal.textContent = optEls.sens.value + '%';
+  optEls.fov.value = settings.fov; optEls.fovVal.textContent = settings.fov + '°';
+}
+optEls.music.addEventListener('input', () => { settings.musicVol = optEls.music.value / 100; optEls.musicVal.textContent = optEls.music.value + '%'; applyAudioSettings(); saveSettings(); });
+optEls.sfx.addEventListener('input', () => { settings.sfxVol = optEls.sfx.value / 100; optEls.sfxVal.textContent = optEls.sfx.value + '%'; applyAudioSettings(); saveSettings(); });
+optEls.sens.addEventListener('input', () => { settings.sensMult = optEls.sens.value / 100; optEls.sensVal.textContent = optEls.sens.value + '%'; saveSettings(); });
+optEls.fov.addEventListener('input', () => { settings.fov = parseInt(optEls.fov.value, 10); optEls.fovVal.textContent = settings.fov + '°'; applyFov(); saveSettings(); });
+
+let optionsReturnTo = 'start';
+function openOptions(from, e) {
+  if (e) e.stopPropagation();
+  optionsReturnTo = from;
+  syncOptionsUI();
+  $('screen-' + from).classList.add('hidden');
+  $('screen-options').classList.remove('hidden');
+}
+$('btn-options-start').addEventListener('click', e => openOptions('start', e));
+$('btn-options-pause').addEventListener('click', e => openOptions('pause', e));
+$('btn-options-back').addEventListener('click', e => {
+  e.stopPropagation();
+  $('screen-options').classList.add('hidden');
+  $('screen-' + optionsReturnTo).classList.remove('hidden');
+});
+applyFov();
 
 // estado inicial: mundo montado para o "modo atração" atrás do menu
 loadLevel(0, true);
