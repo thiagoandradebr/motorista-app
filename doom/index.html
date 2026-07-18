@@ -28,6 +28,15 @@
   /* ---- Vinheta ---- */
   #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 2; background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.65) 100%); }
 
+  /* ---- Barra de vida do chefão ---- */
+  #boss-hud { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); width: 440px; max-width: 80vw; z-index: 5; text-align: center; pointer-events: none; }
+  #boss-name { color: #ff4a2a; font-weight: bold; letter-spacing: 3px; font-size: 15px; text-shadow: 2px 2px 0 #000; margin-bottom: 4px; }
+  #boss-bar-bg { width: 100%; height: 16px; background: #1a0605; border: 2px solid #4a0d09; box-shadow: inset 0 0 6px #000; }
+  #boss-bar-fill { height: 100%; background: linear-gradient(#ff5a30, #a01808); width: 100%; transition: width .25s; }
+
+  /* ---- Indicador de fase ---- */
+  #hud-level { position: fixed; top: 186px; right: 12px; width: 168px; z-index: 4; color: #b89a7a; font-size: 12px; letter-spacing: 2px; text-shadow: 2px 2px 0 #000; text-align: center; }
+
   /* ---- Minimapa ---- */
   #minimap {
     position: fixed; top: 12px; right: 12px; width: 168px; height: 168px; z-index: 4;
@@ -94,7 +103,7 @@
   .btn:hover { filter: brightness(1.35); box-shadow: 0 0 22px rgba(255,60,20,.7); }
   .btn:active { border-style: inset; }
   #end-title { font-size: clamp(40px, 7vw, 84px); }
-  #end-stats { color: #e8c9a0; font-size: 19px; line-height: 2; margin: 22px 0 10px; text-shadow: 2px 2px 0 #000; letter-spacing: 2px; }
+  #end-stats, #inter-stats { color: #e8c9a0; font-size: 19px; line-height: 2; margin: 22px 0 10px; text-shadow: 2px 2px 0 #000; letter-spacing: 2px; }
   #screen-pause { background: rgba(0,0,0,.72); }
   #screen-pause h2 { font-family: Impact, sans-serif; color: #ffd24a; font-size: 44px; letter-spacing: 4px; text-shadow: 3px 3px 0 #000; }
   #screen-pause p { color: #b89a7a; margin-top: 14px; font-size: 15px; }
@@ -106,6 +115,11 @@
 <canvas id="weapon-view" width="160" height="112"></canvas>
 <div id="crosshair"></div>
 <canvas id="minimap" width="168" height="168"></canvas>
+<div id="hud-level"></div>
+<div id="boss-hud" class="hidden">
+  <div id="boss-name">CHEFÃO</div>
+  <div id="boss-bar-bg"><div id="boss-bar-fill"></div></div>
+</div>
 <div id="msgs"></div>
 <div id="flash-damage"></div>
 <div id="flash-pickup"></div>
@@ -140,8 +154,8 @@
   <div class="controls">
     <b>WASD / SETAS</b> mover &nbsp;&bull;&nbsp; <b>SHIFT</b> correr &nbsp;&bull;&nbsp; <b>MOUSE</b> mirar &nbsp;&bull;&nbsp; <b>CLIQUE</b> atirar<br>
     <b>1-5 / RODA DO MOUSE</b> trocar arma &nbsp;&bull;&nbsp; <b>ESC</b> pausar<br><br>
-    Você começa só com soco e pistola — encontre escopeta, metralhadora e lança-foguetes pelo mapa.<br>
-    Extermine os <b>16 demônios</b> para purificar o inferno. Cuidado com os barris!
+    Você começa só com soco e pistola — encontre escopeta, metralhadora e lança-foguetes pelo caminho.<br>
+    <b>10 fases</b> cada vez maiores, terminando num <b>chefão</b>. Cuidado com os barris!
   </div>
 </div>
 
@@ -149,6 +163,12 @@
   <div class="title" id="end-title">VITÓRIA</div>
   <div id="end-stats"></div>
   <button class="btn" id="btn-restart">JOGAR NOVAMENTE</button>
+</div>
+
+<div id="screen-intermission" class="screen hidden">
+  <div class="title" id="inter-title" style="font-size: clamp(34px, 6vw, 68px);">FASE CONCLUÍDA</div>
+  <div id="inter-stats"></div>
+  <button class="btn" id="btn-next-level">PRÓXIMA FASE</button>
 </div>
 
 <div id="screen-pause" class="screen hidden">
@@ -177,72 +197,162 @@
    ========================================================================= */
 
 /* ========================== 1) CONFIG E MAPA ============================= */
-// Legenda: # % & = paredes (tijolo/tech/inferno) . = chão P = jogador
-// Z = zumbi  D = demônio  C = cacodemon  B = barril  M = medkit  A = colete  U = munição
-// S = pickup escopeta  G = pickup metralhadora  L = pickup lança-foguetes
-// MAP-START
-const MAP_ROWS = [
-"##############################",
-"#P.......#.........#....Z....#",
-"#........#....B....#.........#",
-"#..####..#..%%%%...#..Z...Z..#",
-"#..#MU#.S#..%..%...#.........#",
-"#..#..#..#..%..%.G.#....###..#",
-"#..#.##..#..%%.%...#....#A#..#",
-"#........#.........#....#.#..#",
-"####..#######..#####....#.#..#",
-"#...........D.............#..#",
-"#..Z.....#####..#####........#",
-"#........#...#..#...#....D...#",
-"#..####..#.M.#..#.U.#........#",
-"#..#..#..#...#..#...#..####..#",
-"#..#B.#..##.##..##.##..#..#..#",
-"#..#..#................C..#..#",
-"#..#.##..####..####....#..#..#",
-"#........#........#....####..#",
-"#..D.....#..&&&&..#..........#",
-"#........#..&..&..#....Z.....#",
-"####..####..&..&..#..........#",
-"#........#..&&.&..#######..###",
-"#..M..Z..#........#.LB...Z...#",
-"#........####..####..B.......#",
-"#........#........#.....Z....#",
-"#..#.##..#..C.....#..####..###",
-"#..#A.#..#........#..#UM#....#",
-"#B.#..#..#...D....#..#....C..#",
-"#B.####..#...Z....#..####....#",
-"##############################"
-];
-// MAP-END
-const MW = MAP_ROWS[0].length, MH = MAP_ROWS.length;
+// Cada fase é um labirinto sala->corredor->sala gerado proceduralmente a
+// partir de uma semente fixa por fase (mesmo layout em todo replay), com
+// tamanho, tema visual e densidade de monstros crescendo até a fase 10,
+// que é uma arena única para o chefão final.
 const CELL = 3, WALLH = 3.6, EYE = 1.7;
-const WALL_CHARS = { '#': 0, '%': 1, '&': 2 };
+const WALL_THEME = { brick: 0, tech: 1, hell: 2 };
+const THEME_NAMES = ['brick', 'tech', 'hell'];
+const FOG_COLOR = { brick: 0x0a0202, tech: 0x05080b, hell: 0x1a0503 };
+const LEVEL_COUNT = 10;
 
-// grade de colisão: -1 = chão, 0..2 = tipo de parede
-const grid = [];
-const spawns = { player: null, enemies: [], barrels: [], items: [] };
-for (let z = 0; z < MH; z++) {
-  grid.push([]);
-  for (let x = 0; x < MW; x++) {
-    const ch = MAP_ROWS[z][x];
-    const wx = (x + 0.5) * CELL, wz = (z + 0.5) * CELL;
-    if (ch in WALL_CHARS) { grid[z].push(WALL_CHARS[ch]); continue; }
-    grid[z].push(-1);
-    if (ch === 'P') spawns.player = { x: wx, z: wz };
-    else if (ch === 'Z') spawns.enemies.push({ type: 'zombie', x: wx, z: wz });
-    else if (ch === 'D') spawns.enemies.push({ type: 'demon', x: wx, z: wz });
-    else if (ch === 'C') spawns.enemies.push({ type: 'caco', x: wx, z: wz });
-    else if (ch === 'B') spawns.barrels.push({ x: wx, z: wz });
-    else if (ch === 'M') spawns.items.push({ type: 'medkit', x: wx, z: wz });
-    else if (ch === 'A') spawns.items.push({ type: 'armor', x: wx, z: wz });
-    else if (ch === 'U') spawns.items.push({ type: 'ammo', x: wx, z: wz });
-    else if (ch === 'S') spawns.items.push({ type: 'wshotgun', x: wx, z: wz });
-    else if (ch === 'G') spawns.items.push({ type: 'wchaingun', x: wx, z: wz });
-    else if (ch === 'L') spawns.items.push({ type: 'wrocket', x: wx, z: wz });
-  }
+let MW = 0, MH = 0;
+let grid = [];
+let spawns = { player: null, enemies: [], barrels: [], items: [] };
+let TOTAL_MONSTERS = 0, TOTAL_ITEMS = 0;
+let currentLevel = 0;
+const campaign = { totalKills: 0, totalItems: 0, totalTime: 0 };
+
+// gerador pseudoaleatório seedado (mulberry32): mesma fase = mesmo layout sempre
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
-const TOTAL_MONSTERS = spawns.enemies.length;
-const TOTAL_ITEMS = spawns.items.length;
+
+function levelConfig(i) { // i: 0..LEVEL_COUNT-1
+  const n = i + 1;
+  const boss = n === LEVEL_COUNT;
+  return {
+    index: i, n, name: boss ? 'TRONO DO INFERNO' : `FASE ${n}`,
+    size: boss ? 24 : Math.min(34, 18 + i * 2),
+    theme: THEME_NAMES[i % 3],
+    zombies: boss ? 2 : 3 + Math.floor(i * 1.15),
+    demons: boss ? 2 : 1 + Math.floor(i * 0.75),
+    cacos: boss ? 2 : (i >= 2 ? 1 + Math.floor((i - 2) * 0.55) : 0),
+    barrels: boss ? 4 : 2 + Math.floor(i * 0.55),
+    items: boss ? 4 : 5 + Math.floor(i * 0.65),
+    boss, arena: boss,
+    seed: 90041 + i * 7919
+  };
+}
+
+// gera um labirinto sala->corredor->sala; conectado por construção (todo
+// corredor liga duas salas já existentes cavando através de qualquer coisa)
+function generateLevel(cfg) {
+  const size = cfg.size;
+  const rng = mulberry32(cfg.seed);
+  const themeIdx = WALL_THEME[cfg.theme];
+  const altThemeIdx = WALL_THEME[THEME_NAMES[(themeIdx + 1) % 3]];
+  const g = [];
+  for (let z = 0; z < size; z++) g.push(new Array(size).fill(themeIdx));
+  const carve = (x, z) => { if (x > 0 && z > 0 && x < size - 1 && z < size - 1) g[z][x] = -1; };
+  const carveRoom = (rx, rz, rw, rh) => { for (let z = rz; z < rz + rh; z++) for (let x = rx; x < rx + rw; x++) carve(x, z); };
+  const carveCorridor = (x1, z1, x2, z2) => {
+    let x = x1, z = z1;
+    const horizFirst = rng() < 0.5;
+    const stepX = () => { while (x !== x2) { carve(x, z); carve(x, z - 1); carve(x, z + 1); x += x < x2 ? 1 : -1; } };
+    const stepZ = () => { while (z !== z2) { carve(x, z); carve(x - 1, z); carve(x + 1, z); z += z < z2 ? 1 : -1; } };
+    if (horizFirst) { stepX(); stepZ(); } else { stepZ(); stepX(); }
+    carve(x2, z2);
+  };
+
+  const rooms = [];
+  if (cfg.arena) {
+    const pad = 2;
+    carveRoom(pad, pad, size - pad * 2, size - pad * 2);
+    const pillars = Math.floor(size / 6);
+    for (let i = 0; i < pillars; i++) {
+      const px = pad + 3 + Math.floor(rng() * (size - pad * 2 - 6));
+      const pz = pad + 3 + Math.floor(rng() * (size - pad * 2 - 6));
+      g[pz][px] = altThemeIdx; g[pz][px + 1] = altThemeIdx; g[pz + 1][px] = altThemeIdx; g[pz + 1][px + 1] = altThemeIdx;
+    }
+    rooms.push({ x: pad + 2, z: pad + 2, w: 3, h: 3, cx: pad + 3, cz: pad + 3 });
+    rooms.push({ x: size - pad - 5, z: size - pad - 5, w: 3, h: 3, cx: size - pad - 4, cz: size - pad - 4 });
+  } else {
+    const targetRooms = Math.max(6, Math.min(14, Math.floor(size * size / 42)));
+    let attempts = 0;
+    while (rooms.length < targetRooms && attempts < targetRooms * 40) {
+      attempts++;
+      const rw = 3 + Math.floor(rng() * 4), rh = 3 + Math.floor(rng() * 4);
+      const rx = 2 + Math.floor(rng() * (size - rw - 4));
+      const rz = 2 + Math.floor(rng() * (size - rh - 4));
+      const overlaps = rooms.some(r => rx - 1 < r.x + r.w + 1 && rx + rw + 1 > r.x - 1 && rz - 1 < r.z + r.h + 1 && rz + rh + 1 > r.z - 1);
+      if (overlaps) continue;
+      carveRoom(rx, rz, rw, rh);
+      rooms.push({ x: rx, z: rz, w: rw, h: rh, cx: rx + (rw >> 1), cz: rz + (rh >> 1) });
+    }
+    if (rooms.length === 0) { // salvaguarda extrema pra seeds muito ruins
+      const rx = (size >> 1) - 2, rz = (size >> 1) - 2;
+      carveRoom(rx, rz, 4, 4);
+      rooms.push({ x: rx, z: rz, w: 4, h: 4, cx: rx + 2, cz: rz + 2 });
+    }
+    for (let i = 1; i < rooms.length; i++) carveCorridor(rooms[i - 1].cx, rooms[i - 1].cz, rooms[i].cx, rooms[i].cz);
+    const extraLoops = Math.floor(rooms.length * 0.35);
+    for (let i = 0; i < extraLoops; i++) {
+      const a = rooms[Math.floor(rng() * rooms.length)], b = rooms[Math.floor(rng() * rooms.length)];
+      if (a !== b) carveCorridor(a.cx, a.cz, b.cx, b.cz);
+    }
+  }
+
+  // variação de tema em paredes visíveis, pra dar um pouco de cor aos corredores
+  for (let z = 1; z < size - 1; z++) for (let x = 1; x < size - 1; x++) {
+    if (g[z][x] >= 0 && rng() < 0.1) g[z][x] = altThemeIdx;
+  }
+
+  const floorCells = [];
+  for (let z = 1; z < size - 1; z++) for (let x = 1; x < size - 1; x++) if (g[z][x] < 0) floorCells.push({ x, z });
+
+  const spawnPt = { x: rooms[0].cx + 0.5, z: rooms[0].cz + 0.5 };
+  let playerYaw = -Math.PI / 2;
+  if (!cfg.arena && rooms.length > 1) {
+    const dx = rooms[1].cx - spawnPt.x, dz = rooms[1].cz - spawnPt.z;
+    playerYaw = Math.atan2(-dx, -dz);
+  }
+  const used = new Set([Math.round(spawnPt.z) * size + Math.round(spawnPt.x)]);
+  const minDistFromPlayer = cfg.arena ? 6 : 3;
+  const pool = floorCells.filter(c => Math.hypot(c.x - spawnPt.x, c.z - spawnPt.z) > minDistFromPlayer);
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  const takeCell = () => {
+    while (pool.length) {
+      const c = pool.pop();
+      const k = c.z * size + c.x;
+      if (!used.has(k)) { used.add(k); return c; }
+    }
+    return null;
+  };
+
+  const sp = { player: { x: spawnPt.x * CELL, z: spawnPt.z * CELL, yaw: playerYaw }, enemies: [], barrels: [], items: [] };
+
+  if (cfg.arena) {
+    const bossPos = rooms[1];
+    sp.enemies.push({ type: 'boss', x: (bossPos.cx + 0.5) * CELL, z: (bossPos.cz + 0.5) * CELL });
+    used.add(Math.round(bossPos.cz) * size + Math.round(bossPos.cx));
+  }
+  const enemyTypes = [];
+  for (let i = 0; i < cfg.zombies; i++) enemyTypes.push('zombie');
+  for (let i = 0; i < cfg.demons; i++) enemyTypes.push('demon');
+  for (let i = 0; i < cfg.cacos; i++) enemyTypes.push('caco');
+  enemyTypes.forEach(type => { const c = takeCell(); if (c) sp.enemies.push({ type, x: (c.x + 0.5) * CELL, z: (c.z + 0.5) * CELL }); });
+  for (let i = 0; i < cfg.barrels; i++) { const c = takeCell(); if (c) sp.barrels.push({ x: (c.x + 0.5) * CELL, z: (c.z + 0.5) * CELL }); }
+  const itemTypes = [];
+  const nMed = Math.ceil(cfg.items * 0.4), nArm = Math.ceil(cfg.items * 0.25), nAmmo = cfg.items - nMed - nArm;
+  for (let i = 0; i < nMed; i++) itemTypes.push('medkit');
+  for (let i = 0; i < nArm; i++) itemTypes.push('armor');
+  for (let i = 0; i < nAmmo; i++) itemTypes.push('ammo');
+  itemTypes.forEach(type => { const c = takeCell(); if (c) sp.items.push({ type, x: (c.x + 0.5) * CELL, z: (c.z + 0.5) * CELL }); });
+  if (!cfg.boss) { // uma arma nova garantida em fases-chave, pra ter o arsenal completo até a metade da campanha
+    const weaponByLevel = { 0: 'wshotgun', 2: 'wchaingun', 4: 'wrocket' };
+    const wtype = weaponByLevel[cfg.index];
+    if (wtype) { const c = takeCell(); if (c) sp.items.push({ type: wtype, x: (c.x + 0.5) * CELL, z: (c.z + 0.5) * CELL }); }
+  }
+
+  return { MW: size, MH: size, grid: g, spawns: sp, floorCells };
+}
 
 /* ======================= 2) GERADORES DE TEXTURA ========================= */
 const $ = id => document.getElementById(id);
@@ -492,6 +602,37 @@ function drawCaco(mode, f) {
   return c;
 }
 
+// -- CHEFÃO --
+function drawBoss(mode, f) {
+  const c = mkCanvas(64, 64), g = c.getContext('2d');
+  const hop = (mode === 'walk' && f === 1) ? 1 : 0;
+  const l1 = mode === 'walk' && f === 0 ? 3 : 0, l2 = mode === 'walk' && f === 1 ? 3 : 0;
+  px(g, 18, 46, 10, 16 - l1, '#2a0d0a'); px(g, 36, 46, 10, 16 - l2, '#2a0d0a');
+  px(g, 17, 60 - l1, 12, 3, '#140503'); px(g, 35, 60 - l2, 12, 3, '#140503');
+  g.fillStyle = '#5a0f0a'; g.beginPath(); g.ellipse(32, 32 + hop, 20, 20, 0, 0, 7); g.fill();
+  g.fillStyle = '#7c1a10'; g.beginPath(); g.ellipse(32, 28 + hop, 16, 15, 0, 0, 7); g.fill();
+  for (let i = 0; i < 6; i++) px(g, 20 + (i % 3) * 8, 20 + Math.floor(i / 3) * 14 + hop, 5, 5, '#3a0906');
+  g.fillStyle = '#d8c9a8';
+  g.beginPath(); g.moveTo(14, 14 + hop); g.lineTo(3, -3 + hop); g.lineTo(18, 10 + hop); g.fill();
+  g.beginPath(); g.moveTo(50, 14 + hop); g.lineTo(61, -3 + hop); g.lineTo(46, 10 + hop); g.fill();
+  const eyeCol = mode === 'pain' ? '#ffffff' : '#ffb020';
+  px(g, 22, 22 + hop, 5, 4, eyeCol); px(g, 37, 22 + hop, 5, 4, eyeCol);
+  px(g, 23, 23 + hop, 2, 2, '#3a0906'); px(g, 38, 23 + hop, 2, 2, '#3a0906');
+  if (mode === 'attack') {
+    px(g, 20, 32 + hop, 24, 14, '#100302');
+    for (let i = 0; i < 6; i++) { px(g, 21 + i * 4, 32 + hop, 3, 6, '#efe8dc'); px(g, 22 + i * 4, 40 + hop, 3, 5, '#efe8dc'); }
+    if (f === 1) star(g, 32, 38 + hop, 14, '#ff9a3a', '#fff8d0');
+  } else {
+    px(g, 22, 34 + hop, 20, 8, '#100302');
+    for (let i = 0; i < 5; i++) px(g, 24 + i * 4, 34 + hop, 2, 4, '#efe8dc');
+  }
+  const armSpread = mode === 'attack' ? 8 : 0;
+  px(g, 8 - armSpread, 30 + hop, 10, 20, '#4a0d09'); px(g, 46 + armSpread, 30 + hop, 10, 20, '#4a0d09');
+  for (let i = 0; i < 3; i++) { px(g, 6 - armSpread + i * 3, 48 + hop, 2, 6, '#efe8dc'); px(g, 48 + armSpread + i * 3, 48 + hop, 2, 6, '#efe8dc'); }
+  if (mode === 'pain') tint(g, 4, 4, 56, 56, 'rgba(255,255,255,.25)');
+  return c;
+}
+
 // -- itens, barril, projéteis, explosão --
 function drawMedkit() {
   const c = mkCanvas(32, 32), g = c.getContext('2d');
@@ -729,6 +870,12 @@ const SPR = {
     attack: [drawCaco('attack', 0), drawCaco('attack', 1)],
     pain: [drawCaco('pain', 0)],
     death: gibFrames('#b03327', '#7c2018')
+  },
+  boss: {
+    walk: [drawBoss('walk', 0), drawBoss('walk', 1)],
+    attack: [drawBoss('attack', 0), drawBoss('attack', 1)],
+    pain: [drawBoss('pain', 0)],
+    death: gibFrames('#7c1a10', '#3a0906')
   },
   medkit: drawMedkit(), armor: drawArmor(), ammo: drawAmmoBox(), barrel: drawBarrel(),
   fireball: drawFireball(), rocket: drawRocketSpr(), puff: drawPuff(), blood: drawBloodPx(),
@@ -979,21 +1126,36 @@ function flashLight(x, y, z, intensity, color) {
   e.ttl = 0.35;
 }
 
-// luzes fixas tremulantes espalhadas pelos corredores
-const staticLights = [];
-[[4, 1, 0xff7733], [14, 4, 0x66aaff], [24, 1, 0xff7733], [13, 9, 0xff5522],
- [17, 15, 0xff7733], [4, 13, 0xff7733], [14, 19, 0xff3311], [24, 22, 0xff7733],
- [13, 26, 0xff3311], [4, 21, 0xff7733]].forEach(([cx, cz, col]) => {
-  const l = new THREE.PointLight(col, 0.9, 14, 1);
-  l.position.set((cx + 0.5) * CELL, WALLH - 0.7, (cz + 0.5) * CELL);
-  scene.add(l);
-  staticLights.push({ light: l, phase: rnd(0, 7), speed: rnd(6, 14), base: rnd(0.7, 1.0) });
-});
+// luzes fixas tremulantes espalhadas pela fase (regeneradas a cada fase nova)
+let staticLights = [];
+function buildStaticLights(cfg, floorCells, rng) {
+  staticLights.forEach(sl => scene.remove(sl.light));
+  staticLights = [];
+  const colorSets = { brick: [0xff7733, 0xff5522], tech: [0x66aaff, 0xff7733], hell: [0xff3311, 0xff7733] };
+  const cols = colorSets[cfg.theme] || colorSets.brick;
+  const n = Math.max(5, Math.min(22, Math.floor(floorCells.length / 22)));
+  for (let i = 0; i < n; i++) {
+    const cell = floorCells[Math.floor(rng() * floorCells.length)];
+    const col = cols[Math.floor(rng() * cols.length)];
+    const l = new THREE.PointLight(col, 0.9, 14, 1);
+    l.position.set((cell.x + 0.5) * CELL, WALLH - 0.7, (cell.z + 0.5) * CELL);
+    scene.add(l);
+    staticLights.push({ light: l, phase: rng() * 7, speed: 6 + rng() * 8, base: 0.7 + rng() * 0.3 });
+  }
+}
 
-// ---- geometria estática: paredes, chão, teto ----
+// ---- geometria estática: paredes, chão, teto (reconstruída a cada fase) ----
 const wallTextures = [ctex(texBrick()), ctex(texTech()), ctex(texHell())];
-(function buildStatic() {
-  const boxGeo = new THREE.BoxBufferGeometry(CELL, WALLH, CELL);
+const wallMats = wallTextures.map(t => new THREE.MeshLambertMaterial({ map: t }));
+const boxGeo = new THREE.BoxBufferGeometry(CELL, WALLH, CELL);
+const floorTex = ctex(texFloor(), true), floorMat = new THREE.MeshLambertMaterial({ map: floorTex });
+const ceilTex = ctex(texCeil(), true), ceilMat = new THREE.MeshLambertMaterial({ map: ceilTex });
+let wallMeshes = [], floorMesh = null, ceilMesh = null;
+function buildStatic() {
+  wallMeshes.forEach(m => scene.remove(m));
+  if (floorMesh) { scene.remove(floorMesh); floorMesh.geometry.dispose(); floorMesh = null; }
+  if (ceilMesh) { scene.remove(ceilMesh); ceilMesh.geometry.dispose(); ceilMesh = null; }
+
   const counts = [0, 0, 0];
   const visible = [];
   for (let z = 0; z < MH; z++) for (let x = 0; x < MW; x++) {
@@ -1005,32 +1167,32 @@ const wallTextures = [ctex(texBrick()), ctex(texTech()), ctex(texHell())];
     });
     if (nearFloor) { visible.push({ x, z, t }); counts[t]++; }
   }
-  const meshes = counts.map((n, i) => new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial({ map: wallTextures[i] }), Math.max(1, n)));
+  wallMeshes = counts.map((n, i) => new THREE.InstancedMesh(boxGeo, wallMats[i], Math.max(1, n)));
   const idx = [0, 0, 0];
   const m4 = new THREE.Matrix4();
   visible.forEach(({ x, z, t }) => {
     m4.makeTranslation((x + 0.5) * CELL, WALLH / 2, (z + 0.5) * CELL);
-    meshes[t].setMatrixAt(idx[t]++, m4);
+    wallMeshes[t].setMatrixAt(idx[t]++, m4);
   });
-  meshes.forEach(m => { m.instanceMatrix.needsUpdate = true; m.castShadow = true; m.receiveShadow = true; scene.add(m); });
+  wallMeshes.forEach((m, i) => { m.count = counts[i]; m.instanceMatrix.needsUpdate = true; m.castShadow = true; m.receiveShadow = true; scene.add(m); });
 
-  const floorTex = ctex(texFloor(), true); floorTex.repeat.set(MW, MH);
-  const floor = new THREE.Mesh(new THREE.PlaneBufferGeometry(MW * CELL, MH * CELL), new THREE.MeshLambertMaterial({ map: floorTex }));
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.set(MW * CELL / 2, 0, MH * CELL / 2);
-  floor.receiveShadow = true;
-  scene.add(floor);
+  floorTex.repeat.set(MW, MH);
+  floorMesh = new THREE.Mesh(new THREE.PlaneBufferGeometry(MW * CELL, MH * CELL), floorMat);
+  floorMesh.rotation.x = -Math.PI / 2;
+  floorMesh.position.set(MW * CELL / 2, 0, MH * CELL / 2);
+  floorMesh.receiveShadow = true;
+  scene.add(floorMesh);
 
-  const ceilTex = ctex(texCeil(), true); ceilTex.repeat.set(MW, MH);
-  const ceil = new THREE.Mesh(new THREE.PlaneBufferGeometry(MW * CELL, MH * CELL), new THREE.MeshLambertMaterial({ map: ceilTex }));
-  ceil.rotation.x = Math.PI / 2;
-  ceil.position.set(MW * CELL / 2, WALLH, MH * CELL / 2);
-  scene.add(ceil);
-})();
+  ceilTex.repeat.set(MW, MH);
+  ceilMesh = new THREE.Mesh(new THREE.PlaneBufferGeometry(MW * CELL, MH * CELL), ceilMat);
+  ceilMesh.rotation.x = Math.PI / 2;
+  ceilMesh.position.set(MW * CELL / 2, WALLH, MH * CELL / 2);
+  scene.add(ceilMesh);
+}
 
 // texturas de sprite pré-criadas
 const TEX = { enemy: {}, misc: {} };
-['zombie', 'demon', 'caco'].forEach(k => {
+['zombie', 'demon', 'caco', 'boss'].forEach(k => {
   TEX.enemy[k] = {};
   for (const st of ['walk', 'attack', 'pain', 'death']) TEX.enemy[k][st] = SPR[k][st].map(cv => ctex(cv));
 });
@@ -1101,7 +1263,8 @@ function los(x1, z1, x2, z2) { // linha de visão pela grade
 const ENEMY_DEFS = {
   zombie: { hp: 30, speed: 2.2, radius: 0.5, height: 2.0, sight: 26, atkRange: 18, windup: 0.55, cd: [1.1, 2.0], dmg: [4, 13], painChance: 0.6, pitch: 150, scale: [2.0, 2.1], fly: false },
   demon:  { hp: 90, speed: 5.4, radius: 0.65, height: 2.0, sight: 30, atkRange: 2.3, windup: 0.35, cd: [0.7, 1.1], dmg: [8, 22], painChance: 0.35, pitch: 90, scale: [2.4, 2.3], fly: false },
-  caco:   { hp: 110, speed: 2.7, radius: 0.75, height: 1.9, sight: 34, atkRange: 24, windup: 0.6, cd: [1.6, 2.6], dmg: [10, 22], painChance: 0.3, pitch: 60, scale: [2.5, 2.5], fly: true, hover: 1.9 }
+  caco:   { hp: 110, speed: 2.7, radius: 0.75, height: 1.9, sight: 34, atkRange: 24, windup: 0.6, cd: [1.6, 2.6], dmg: [10, 22], painChance: 0.3, pitch: 60, scale: [2.5, 2.5], fly: true, hover: 1.9 },
+  boss:   { hp: 2200, speed: 3.4, radius: 1.6, height: 3.4, sight: 60, atkRange: 30, meleeRange: 3.2, windup: 0.5, cd: [0.6, 1.3], dmg: [18, 34], painChance: 0.08, pitch: 40, scale: [5.6, 5.6], fly: false, boss: true }
 };
 
 let enemies = [], barrels = [], items = [], projectiles = [], particles = [], fxAnims = [], tracers = [];
@@ -1500,6 +1663,20 @@ function updateEnemy(e, dt) {
           const ddx = player.x - e.x, ddy = ty - sy, ddz = player.z - e.z;
           const dl = Math.hypot(ddx, ddy, ddz) || 1;
           spawnProjectile('fireball', e.x + ddx / dl * 0.9, sy + ddy / dl * 0.9, e.z + ddz / dl * 0.9, ddx / dl, ddy / dl, ddz / dl);
+        } else if (e.type === 'boss') {
+          if (dist < def.meleeRange) {
+            SFX.punch({ x: e.x, z: e.z }); damagePlayer(rnd(def.dmg[0], def.dmg[1]), { x: e.x, z: e.z });
+            shake = Math.min(0.7, shake + 0.3);
+          } else { // rajada de 3 bolas de fogo em leque
+            const ty = EYE - 0.1, sy = def.height * 0.7;
+            for (let i = -1; i <= 1; i++) {
+              const ang = i * 0.2, cosA = Math.cos(ang), sinA = Math.sin(ang);
+              const rx = player.x - e.x, rz = player.z - e.z;
+              const ddx = rx * cosA - rz * sinA, ddz = rx * sinA + rz * cosA, ddy = ty - sy;
+              const dl = Math.hypot(ddx, ddy, ddz) || 1;
+              spawnProjectile('fireball', e.x + ddx / dl * 1.4, sy + ddy / dl * 1.4, e.z + ddz / dl * 1.4, ddx / dl, ddy / dl, ddz / dl);
+            }
+          }
         }
       }
     }
@@ -1519,7 +1696,7 @@ function updateEnemy(e, dt) {
   if (e.type === 'zombie') {
     if (dist < 10 && hasLos) wantMove = false; // fica parado atirando
     mvx = ux; mvz = uz;
-  } else if (e.type === 'demon') {
+  } else if (e.type === 'demon' || e.type === 'boss') {
     mvx = ux; mvz = uz;
   } else { // caco: mantém distância e faz strafe
     e.strafeT -= dt;
@@ -1613,21 +1790,32 @@ function updateFace() {
   }
 }
 
-// minimapa
+const bossHudEl = $('boss-hud'), bossBarFill = $('boss-bar-fill');
+let bossHudShown = false;
+function updateBossHud() {
+  const boss = enemies.find(e => e.type === 'boss' && e.state !== 'dead');
+  if (!boss) { if (bossHudShown) { bossHudEl.classList.add('hidden'); bossHudShown = false; } return; }
+  if (!bossHudShown) { bossHudEl.classList.remove('hidden'); bossHudShown = true; }
+  bossBarFill.style.width = Math.max(0, boss.hp / boss.def.hp * 100) + '%';
+}
+
+// minimapa (escala recalculada por fase pra caber sempre na caixa fixa da UI)
 const mmCanvas = $('minimap'), mmCtx = mmCanvas.getContext('2d');
-const MM_SCALE = 5, MM_PAD = 9;
-const mmWalls = mkCanvas(MW * MM_SCALE, MH * MM_SCALE);
-(function prerenderMinimap() {
+const MM_PAD = 9;
+let mmScale = 5, mmWalls = mkCanvas(1, 1);
+function prerenderMinimap() {
+  mmScale = (mmCanvas.width - MM_PAD * 2) / Math.max(MW, MH);
+  mmWalls = mkCanvas(Math.ceil(MW * mmScale), Math.ceil(MH * mmScale));
   const g = mmWalls.getContext('2d');
   const cols = ['#8a4a3a', '#7080a0', '#a03020'];
   for (let z = 0; z < MH; z++) for (let x = 0; x < MW; x++) {
-    if (grid[z][x] >= 0) { g.fillStyle = cols[grid[z][x]]; g.fillRect(x * MM_SCALE, z * MM_SCALE, MM_SCALE, MM_SCALE); }
+    if (grid[z][x] >= 0) { g.fillStyle = cols[grid[z][x]]; g.fillRect(x * mmScale, z * mmScale, mmScale, mmScale); }
   }
-})();
+}
 function drawMinimap() {
   mmCtx.clearRect(0, 0, mmCanvas.width, mmCanvas.height);
   mmCtx.drawImage(mmWalls, MM_PAD, MM_PAD);
-  const toMap = (x, z) => [MM_PAD + x / CELL * MM_SCALE, MM_PAD + z / CELL * MM_SCALE];
+  const toMap = (x, z) => [MM_PAD + x / CELL * mmScale, MM_PAD + z / CELL * mmScale];
   // itens (verde) e barris (laranja)
   for (const it of items) {
     if (it.taken) continue;
@@ -1705,6 +1893,12 @@ function fmtTime(s) {
 function statsHtml() {
   const acc = stats.shots > 0 ? Math.round(stats.hits / stats.shots * 100) : 0;
   return `TEMPO: ${fmtTime(stats.time)}<br>DEMÔNIOS MORTOS: ${stats.kills} / ${TOTAL_MONSTERS}<br>ITENS COLETADOS: ${stats.itemsTaken} / ${TOTAL_ITEMS}<br>PRECISÃO: ${acc}%`;
+}
+function campaignStatsHtml() {
+  const kills = campaign.totalKills + stats.kills;
+  const items = campaign.totalItems + stats.itemsTaken;
+  const time = campaign.totalTime + stats.time;
+  return `FASE ALCANÇADA: ${currentLevel + 1} / ${LEVEL_COUNT}<br>TEMPO TOTAL: ${fmtTime(time)}<br>DEMÔNIOS ABATIDOS: ${kills}<br>ITENS COLETADOS: ${items}`;
 }
 
 /* ======================= 12) LOOP PRINCIPAL ============================== */
@@ -1830,6 +2024,7 @@ function frame(now) {
     drawWeaponView(dt, spd);
     drawMinimap();
     updateFace();
+    updateBossHud();
 
     // flashes de tela
     dmgFlash = Math.max(0, dmgFlash - dt * 1.4);
@@ -1878,7 +2073,21 @@ function frame(now) {
 }
 
 /* ======================== 13) FLUXO DE JOGO ============================== */
-function resetDynamic() {
+function loadLevel(idx, freshStart) {
+  currentLevel = idx;
+  const cfg = levelConfig(idx);
+  const gen = generateLevel(cfg);
+  MW = gen.MW; MH = gen.MH; grid = gen.grid; spawns = gen.spawns;
+  TOTAL_MONSTERS = spawns.enemies.length;
+  TOTAL_ITEMS = spawns.items.length;
+
+  const decoRng = mulberry32(cfg.seed + 1);
+  buildStatic();
+  buildStaticLights(cfg, gen.floorCells, decoRng);
+  prerenderMinimap();
+  scene.fog.color.setHex(FOG_COLOR[cfg.theme] || FOG_COLOR.brick);
+  scene.fog.far = Math.min(50, 20 + cfg.size * 0.6);
+
   if (dynamicGroup) {
     dynamicGroup.traverse(o => { if (o.material && o.material.dispose) o.material.dispose(); });
     scene.remove(dynamicGroup);
@@ -1892,30 +2101,48 @@ function resetDynamic() {
   spawns.items.forEach(spawnItem);
 
   player.x = spawns.player.x; player.z = spawns.player.z;
-  player.yaw = -Math.PI / 2; player.pitch = 0;
-  player.hp = 100; player.armor = 0; player.alive = true;
-  player.vx = 0; player.vz = 0; player.weapon = 1; player.cd = 0;
+  player.yaw = spawns.player.yaw; player.pitch = 0;
+  player.vx = 0; player.vz = 0; player.cd = 0;
   player.fireT = -1; player.switchT = 0; player.bob = 0;
-  player.ammo = { bullets: 40, shells: 0, rockets: 0 };
-  player.owned = [true, true, false, false, false];
   player.painSndCd = 0; player.ouchT = 0; player.deathT = 0;
   player.kickPitch = 0; player.kickYaw = 0; player.curSpeed = 0; player.chainHeat = 0;
+
+  if (freshStart) {
+    player.hp = 100; player.armor = 0; player.alive = true; player.weapon = 1;
+    player.ammo = { bullets: 40, shells: 0, rockets: 0 };
+    player.owned = [true, true, false, false, false];
+    campaign.totalKills = 0; campaign.totalItems = 0; campaign.totalTime = 0;
+  } else {
+    player.alive = true;
+  }
+
   stats.time = 0; stats.kills = 0; stats.shots = 0; stats.hits = 0; stats.itemsTaken = 0;
   dmgFlash = 0; pickFlash = 0; shake = 0; lastFace = -1;
   gameEnded = false;
   firing = false;
+  bossHudShown = false; bossHudEl.classList.add('hidden');
+  $('hud-level').textContent = cfg.boss ? `${cfg.name} — ${cfg.n}/${LEVEL_COUNT}` : `FASE ${cfg.n}/${LEVEL_COUNT}`;
   updateHud(); updateFace(); drawMinimap();
+  msg(cfg.boss ? 'VOCÊ CHEGOU AO ' + cfg.name : `FASE ${cfg.n} INICIADA`);
 }
 
 function startGame() {
   initAudio();
-  resetDynamic();
+  loadLevel(0, true);
   started = true; playing = true;
   startGrace = 0.35;
   $('screen-start').classList.add('hidden');
   $('screen-end').classList.add('hidden');
+  $('screen-intermission').classList.add('hidden');
   lockPointer();
-  msg('EXTERMINE TODOS OS DEMÔNIOS!');
+}
+
+function advanceLevel() {
+  campaign.totalKills += stats.kills; campaign.totalItems += stats.itemsTaken; campaign.totalTime += stats.time;
+  player.hp = Math.min(100, player.hp + 25);
+  loadLevel(currentLevel + 1, false);
+  playing = true;
+  lockPointer();
 }
 
 function killPlayer() {
@@ -1929,7 +2156,7 @@ function killPlayer() {
     document.exitPointerLock && document.exitPointerLock();
     $('end-title').textContent = 'VOCÊ MORREU';
     $('end-title').style.color = '#ff3018';
-    $('end-stats').innerHTML = statsHtml();
+    $('end-stats').innerHTML = campaignStatsHtml();
     $('screen-end').classList.remove('hidden');
   }, 1600);
 }
@@ -1940,18 +2167,28 @@ function checkVictory() {
     if (gameEnded || !player.alive) return;
     gameEnded = true; playing = false;
     document.exitPointerLock && document.exitPointerLock();
-    $('end-title').textContent = 'INFERNO PURIFICADO';
-    $('end-title').style.color = '#ffd24a';
-    $('end-stats').innerHTML = statsHtml();
-    $('screen-end').classList.remove('hidden');
+    if (currentLevel < LEVEL_COUNT - 1) {
+      $('inter-title').textContent = levelConfig(currentLevel).name + ' CONCLUÍDA';
+      $('inter-stats').innerHTML = statsHtml();
+      $('screen-intermission').classList.remove('hidden');
+    } else {
+      $('end-title').textContent = 'INFERNO PURIFICADO';
+      $('end-title').style.color = '#ffd24a';
+      $('end-stats').innerHTML = campaignStatsHtml();
+      $('screen-end').classList.remove('hidden');
+    }
   }, 1200);
 }
 
 $('btn-start').addEventListener('click', startGame);
 $('btn-restart').addEventListener('click', startGame);
+$('btn-next-level').addEventListener('click', () => {
+  $('screen-intermission').classList.add('hidden');
+  advanceLevel();
+});
 
 // estado inicial: mundo montado para o "modo atração" atrás do menu
-resetDynamic();
+loadLevel(0, true);
 started = false; playing = false;
 updateHud(); updateFace();
 requestAnimationFrame(frame);
@@ -1960,14 +2197,14 @@ requestAnimationFrame(frame);
 window.__DOOM = {
   get state() {
     return {
-      playing, started, hp: player.hp, armor: player.armor,
+      playing, started, hp: player.hp, armor: player.armor, level: currentLevel + 1, levelCount: LEVEL_COUNT,
       kills: stats.kills, total: TOTAL_MONSTERS,
       enemiesAlive: enemies.filter(e => e.state !== 'dead' && e.state !== 'dying').length,
       weapon: WEAPONS[player.weapon].name, weaponIdx: player.weapon, owned: player.owned.slice(),
       ammo: { ...player.ammo }, pos: [player.x, player.z]
     };
   },
-  start: startGame, player, WEAPONS, selectWeapon,
+  start: startGame, advanceLevel, loadLevel, player, WEAPONS, selectWeapon, campaign, LEVEL_COUNT, levelConfig,
   get enemies() { return enemies; }, get barrels() { return barrels; }, get items() { return items; },
   damageEnemy, damageBarrel, damagePlayer
 };
