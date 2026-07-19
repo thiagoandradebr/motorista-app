@@ -27,6 +27,12 @@
 
   /* ---- Vinheta ---- */
   #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 2; background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.65) 100%); }
+  #crt-overlay {
+    position: fixed; inset: 0; pointer-events: none; z-index: 2;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 1px, rgba(0,0,0,.14) 2px, rgba(0,0,0,.14) 3px);
+    opacity: .55;
+  }
+  #crt-overlay.hidden { display: none; }
 
   /* ---- Barra de vida do chefão ---- */
   #boss-hud { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); width: 440px; max-width: 80vw; z-index: 5; text-align: center; pointer-events: none; }
@@ -120,12 +126,14 @@
   .opt-row { display: flex; align-items: center; gap: 16px; width: 380px; max-width: 82vw; margin: 11px 0; color: #e8c9a0; font-size: 13px; letter-spacing: 1px; text-shadow: 1px 1px 0 #000; }
   .opt-row label { width: 160px; text-align: right; }
   .opt-row input[type=range] { flex: 1; accent-color: #c0402a; }
+  .opt-row input[type=checkbox] { width: 20px; height: 20px; accent-color: #c0402a; }
   .opt-row span { width: 46px; text-align: left; color: #ffd24a; }
 </style>
 </head>
 <body>
 <div id="viewport"></div>
 <div id="vignette"></div>
+<div id="crt-overlay"></div>
 <canvas id="weapon-view" width="160" height="112"></canvas>
 <div id="crosshair"></div>
 <canvas id="minimap" width="168" height="168"></canvas>
@@ -198,6 +206,7 @@
   <div class="opt-row"><label>EFEITOS SONOROS</label><input type="range" id="opt-sfx" min="0" max="100" value="90"><span id="opt-sfx-val">90%</span></div>
   <div class="opt-row"><label>SENSIBILIDADE</label><input type="range" id="opt-sens" min="40" max="250" value="100"><span id="opt-sens-val">100%</span></div>
   <div class="opt-row"><label>CAMPO DE VISÃO</label><input type="range" id="opt-fov" min="65" max="100" value="75"><span id="opt-fov-val">75°</span></div>
+  <div class="opt-row"><label>EFEITO CRT</label><input type="checkbox" id="opt-crt" checked><span></span></div>
   <button class="btn" id="btn-options-back" style="margin-top:26px;">VOLTAR</button>
 </div>
 
@@ -917,7 +926,7 @@ const WEAPON_FRAMES = [
 const FACES = [drawFace(0), drawFace(1), drawFace(2), drawFace(3), drawFace(4)];
 
 /* ========================== OPÇÕES / CONFIGURAÇÕES ======================= */
-const DEFAULT_SETTINGS = { musicVol: 0.3, sfxVol: 0.9, sensMult: 1.0, fov: 75 };
+const DEFAULT_SETTINGS = { musicVol: 0.3, sfxVol: 0.9, sensMult: 1.0, fov: 75, crt: true };
 let settings = { ...DEFAULT_SETTINGS };
 function loadSettings() {
   try {
@@ -1017,6 +1026,7 @@ const SFX = {
   enemyPain(at, pitch) { if (!AC) return; const d = busFor(at), t = AC.currentTime; tone(d, t, 'sawtooth', (pitch || 140) * rnd(0.9, 1.15), 60, 0.28, 0.4); },
   enemyDeath(at, pitch) { if (!AC) return; const d = busFor(at), t = AC.currentTime; tone(d, t, 'sawtooth', (pitch || 160), 35, 0.55, 0.5); noise(d, t + 0.03, 'lowpass', 900, 200, 0.4, 0.4); },
   alert(at, pitch) { if (!AC) return; const d = busFor(at), t = AC.currentTime; tone(d, t, 'sawtooth', (pitch || 90), 140, 0.22, 0.3); tone(d, t + 0.16, 'sawtooth', (pitch || 90) * 1.3, 70, 0.2, 0.28); },
+  ambientGrowl(at, pitch) { if (!AC) return; const d = busFor(at), t = AC.currentTime; tone(d, t, 'sawtooth', (pitch || 120) * rnd(0.75, 0.95), (pitch || 120) * 0.5, rnd(0.5, 0.8), 0.13); },
   playerPain() { if (!AC) return; const d = busFor(null), t = AC.currentTime; tone(d, t, 'square', 190, 70, 0.22, 0.4); noise(d, t, 'lowpass', 700, 250, 0.18, 0.25); },
   pickup() { if (!AC) return; const d = busFor(null), t = AC.currentTime; tone(d, t, 'square', 520, null, 0.07, 0.25, 0.002); tone(d, t + 0.08, 'square', 780, null, 0.1, 0.25, 0.002); },
   click() { if (!AC) return; const d = busFor(null), t = AC.currentTime; tone(d, t, 'square', 900, 500, 0.04, 0.12, 0.002); },
@@ -1253,6 +1263,37 @@ TEX.misc.explosion = SPR.explosion.map(cv => ctex(cv));
 const bloodMat = new THREE.SpriteMaterial({ map: TEX.misc.blood, transparent: true, alphaTest: 0.1 });
 const puffMat = new THREE.SpriteMaterial({ map: TEX.misc.puff, transparent: true, alphaTest: 0.05 });
 
+// halo aditivo (bloom "falso") usado em disparos, foguetes e explosões
+function texGlow() {
+  const c = mkCanvas(64, 64), g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,225,160,.95)');
+  grad.addColorStop(0.4, 'rgba(255,150,60,.5)');
+  grad.addColorStop(1, 'rgba(255,80,20,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  return c;
+}
+const glowMat = new THREE.SpriteMaterial({ map: ctex(texGlow()), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+function spawnGlow(x, y, z, scale, ttl) {
+  const mat = glowMat.clone();
+  const s = new THREE.Sprite(mat);
+  s.scale.set(scale, scale, 1);
+  s.position.set(x, y, z);
+  dynamicGroup.add(s);
+  glows.push({ sprite: s, mat, ttl, dur: ttl, scale });
+  return glows[glows.length - 1];
+}
+function updateGlows(dt) {
+  for (let i = glows.length - 1; i >= 0; i--) {
+    const gl = glows[i];
+    gl.ttl -= dt;
+    if (gl.ttl <= 0) { dynamicGroup.remove(gl.sprite); gl.mat.dispose(); glows.splice(i, 1); continue; }
+    const k = gl.ttl / gl.dur;
+    gl.sprite.scale.setScalar(gl.scale * (1 + (1 - k) * 0.6));
+    gl.mat.opacity = k;
+  }
+}
+
 // sombra de contato falsa (blob) sob os inimigos: mesh plano deitado, não é billboard como os sprites
 function texBlobShadow() {
   const c = mkCanvas(32, 32), g = c.getContext('2d');
@@ -1318,7 +1359,7 @@ const ENEMY_DEFS = {
   boss:   { hp: 2200, speed: 3.4, radius: 1.6, height: 3.4, sight: 60, atkRange: 30, meleeRange: 3.2, windup: 0.5, cd: [0.6, 1.3], dmg: [18, 34], painChance: 0.08, pitch: 40, scale: [5.6, 5.6], fly: false, boss: true }
 };
 
-let enemies = [], barrels = [], items = [], projectiles = [], particles = [], fxAnims = [], tracers = [];
+let enemies = [], barrels = [], items = [], projectiles = [], particles = [], fxAnims = [], tracers = [], glows = [];
 let dynamicGroup = null;
 
 const player = {
@@ -1332,7 +1373,7 @@ const player = {
 };
 const stats = { time: 0, kills: 0, shots: 0, hits: 0, itemsTaken: 0 };
 let playing = false, started = false, gameEnded = false;
-let dmgFlash = 0, pickFlash = 0, shake = 0, startGrace = 0;
+let dmgFlash = 0, pickFlash = 0, shake = 0, startGrace = 0, ambientSndCd = rnd(3, 6);
 
 function spawnEnemy(sp) {
   const def = ENEMY_DEFS[sp.type];
@@ -1407,13 +1448,23 @@ function spawnFx(x, y, z, scale, dur) {
   fxAnims.push({ sprite: s, mat, t: 0, dur, frames: TEX.misc.explosion });
 }
 
+function attachGlow(scale) {
+  const mat = glowMat.clone();
+  const s = new THREE.Sprite(mat);
+  s.scale.set(scale, scale, 1);
+  dynamicGroup.add(s);
+  return { sprite: s, mat };
+}
+
 function spawnProjectile(kind, x, y, z, dx, dy, dz) {
   const isRocket = kind === 'rocket';
   const spr = makeSprite(isRocket ? TEX.misc.rocket : TEX.misc.fireball, isRocket ? 0.7 : 0.55, isRocket ? 0.35 : 0.55, false);
   spr.position.set(x, y, z);
   dynamicGroup.add(spr);
+  const glow = attachGlow(isRocket ? 1.3 : 1.0);
+  glow.sprite.position.set(x, y, z);
   const speed = isRocket ? 21 : 8.5;
-  projectiles.push({ kind, x, y, z, vx: dx * speed, vy: dy * speed, vz: dz * speed, sprite: spr, ttl: 6 });
+  projectiles.push({ kind, x, y, z, vx: dx * speed, vy: dy * speed, vz: dz * speed, sprite: spr, glow, ttl: 6 });
   if (isRocket) SFX.rocketFire(null); else SFX.fireball({ x, z });
 }
 
@@ -1531,6 +1582,7 @@ function tryFire() {
   if (w.projectile) { // o som do disparo toca dentro de spawnProjectile
     spawnProjectile('rocket', ox + _dir.x * 0.7, oy + _dir.y * 0.7 - 0.12, oz + _dir.z * 0.7, _dir.x, _dir.y, _dir.z);
     flashLight(ox + _dir.x, oy, oz + _dir.z, 2.2, 0xffaa40);
+    spawnGlow(ox + _dir.x * 1.8, oy - 0.1, oz + _dir.z * 1.8, 0.9, 0.09);
     updateHud();
     return;
   }
@@ -1545,6 +1597,7 @@ function tryFire() {
 
   if (player.weapon === 1) SFX.pistol(); else if (player.weapon === 2) SFX.shotgun(); else SFX.chaingun();
   flashLight(ox + _dir.x * 1.2, oy, oz + _dir.z * 1.2, 1.6, 0xffcc66);
+  spawnGlow(ox + _dir.x * 1.8, oy - 0.15, oz + _dir.z * 1.8, player.weapon === 2 ? 1.1 : 0.7, 0.07);
   let hitAny = false;
   for (let p = 0; p < w.pellets; p++) {
     const sx = (Math.random() * 2 - 1) * w.spread * moveMult, sy = (Math.random() * 2 - 1) * w.spread * moveMult;
@@ -1603,6 +1656,7 @@ function damagePlayer(dmg, srcPos) {
 
 function explode(x, y, z, radius, maxDmg, hurtPlayer) {
   spawnFx(x, Math.max(1.1, y), z, 4.2, 0.5);
+  spawnGlow(x, Math.max(1.1, y), z, 6.5, 0.45);
   flashLight(x, Math.max(1.2, y), z, 4.5, 0xff7722);
   SFX.explosion({ x, z });
   for (const e of enemies) {
@@ -1645,20 +1699,23 @@ function updateProjectiles(dt) {
         damagePlayer(rnd(10, 22), { x: p.x, z: p.z });
         gone = true;
         spawnFx(nx, ny, nz, 1.4, 0.3);
+        spawnGlow(nx, ny, nz, 2.2, 0.25);
       }
     }
     if (boom) {
       if (p.kind === 'rocket') explode(p.x, p.y, p.z, 4.5, 105, true);
-      else spawnFx(p.x, p.y, p.z, 1.2, 0.3);
+      else { spawnFx(p.x, p.y, p.z, 1.2, 0.3); spawnGlow(p.x, p.y, p.z, 2.0, 0.25); }
       gone = true;
     }
     if (gone) {
       dynamicGroup.remove(p.sprite); p.sprite.material.dispose();
+      dynamicGroup.remove(p.glow.sprite); p.glow.mat.dispose();
       projectiles.splice(i, 1);
       continue;
     }
     p.x = nx; p.y = ny; p.z = nz;
     p.sprite.position.set(nx, ny, nz);
+    p.glow.sprite.position.set(nx, ny, nz);
   }
 }
 
@@ -2101,6 +2158,14 @@ function frame(now) {
     const chainFiring = firing && player.weapon === 3 && player.alive;
     player.chainHeat = Math.max(0, Math.min(1, player.chainHeat + (chainFiring ? dt / 0.55 : -dt / 0.35)));
 
+    // grunhidos ambiente de monstros distantes ainda não alertados, pra atmosfera
+    ambientSndCd -= dt;
+    if (ambientSndCd <= 0) {
+      ambientSndCd = rnd(4, 9);
+      const near = enemies.filter(e => e.state !== 'dying' && e.state !== 'dead' && !e.alerted && Math.hypot(e.x - player.x, e.z - player.z) < 26);
+      if (near.length) { const e = near[Math.floor(Math.random() * near.length)]; SFX.ambientGrowl({ x: e.x, z: e.z }, e.def.pitch); }
+    }
+
     const spd = updatePlayer(dt);
     for (const e of enemies) updateEnemy(e, dt);
     updateProjectiles(dt);
@@ -2108,6 +2173,7 @@ function frame(now) {
     updateItems(dt, now);
     updateParticles(dt);
     updateTracers(dt);
+    updateGlows(dt);
     drawWeaponView(dt, spd);
     drawMinimap();
     updateFace();
@@ -2182,7 +2248,7 @@ function loadLevel(idx, freshStart) {
   dynamicGroup = new THREE.Group();
   scene.add(dynamicGroup);
   tracers.forEach(tr => { tr.geo.dispose(); tr.mat.dispose(); });
-  enemies = []; barrels = []; items = []; projectiles = []; particles = []; fxAnims = []; tracers = [];
+  enemies = []; barrels = []; items = []; projectiles = []; particles = []; fxAnims = []; tracers = []; glows = [];
   spawns.enemies.forEach(spawnEnemy);
   spawns.barrels.forEach(spawnBarrel);
   spawns.items.forEach(spawnItem);
@@ -2281,18 +2347,22 @@ const optEls = {
   music: $('opt-music'), musicVal: $('opt-music-val'),
   sfx: $('opt-sfx'), sfxVal: $('opt-sfx-val'),
   sens: $('opt-sens'), sensVal: $('opt-sens-val'),
-  fov: $('opt-fov'), fovVal: $('opt-fov-val')
+  fov: $('opt-fov'), fovVal: $('opt-fov-val'),
+  crt: $('opt-crt')
 };
 function syncOptionsUI() {
   optEls.music.value = Math.round(settings.musicVol * 100); optEls.musicVal.textContent = optEls.music.value + '%';
   optEls.sfx.value = Math.round(settings.sfxVol * 100); optEls.sfxVal.textContent = optEls.sfx.value + '%';
   optEls.sens.value = Math.round(settings.sensMult * 100); optEls.sensVal.textContent = optEls.sens.value + '%';
   optEls.fov.value = settings.fov; optEls.fovVal.textContent = settings.fov + '°';
+  optEls.crt.checked = settings.crt;
 }
+function applyCrt() { $('crt-overlay').classList.toggle('hidden', !settings.crt); }
 optEls.music.addEventListener('input', () => { settings.musicVol = optEls.music.value / 100; optEls.musicVal.textContent = optEls.music.value + '%'; applyAudioSettings(); saveSettings(); });
 optEls.sfx.addEventListener('input', () => { settings.sfxVol = optEls.sfx.value / 100; optEls.sfxVal.textContent = optEls.sfx.value + '%'; applyAudioSettings(); saveSettings(); });
 optEls.sens.addEventListener('input', () => { settings.sensMult = optEls.sens.value / 100; optEls.sensVal.textContent = optEls.sens.value + '%'; saveSettings(); });
 optEls.fov.addEventListener('input', () => { settings.fov = parseInt(optEls.fov.value, 10); optEls.fovVal.textContent = settings.fov + '°'; applyFov(); saveSettings(); });
+optEls.crt.addEventListener('change', () => { settings.crt = optEls.crt.checked; applyCrt(); saveSettings(); });
 
 let optionsReturnTo = 'start';
 function openOptions(from, e) {
@@ -2310,6 +2380,7 @@ $('btn-options-back').addEventListener('click', e => {
   $('screen-' + optionsReturnTo).classList.remove('hidden');
 });
 applyFov();
+applyCrt();
 
 // estado inicial: mundo montado para o "modo atração" atrás do menu
 loadLevel(0, true);
