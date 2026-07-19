@@ -335,6 +335,55 @@
 </script>
 <script>
 'use strict';
+// checagem de segurança: sem WebGL o resto do script quebraria em silêncio
+// (new THREE.WebGLRenderer() lança exceção e mata toda a execução), então
+// detectamos antes e mostramos uma mensagem clara em vez de tela travada.
+(function checkWebGLSupport() {
+  let ok = false;
+  try {
+    const c = document.createElement('canvas');
+    ok = !!(window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl')));
+  } catch (e) { ok = false; }
+  if (!ok) {
+    document.body.innerHTML = `<div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      background:#0a0000;color:#e8c9a0;font-family:'Courier New',monospace;text-align:center;padding:24px;gap:14px;">
+      <div style="font-family:Impact,'Arial Black',sans-serif;font-size:36px;color:#ff3018;letter-spacing:3px;">SEM WEBGL</div>
+      <div style="max-width:420px;font-size:14px;line-height:1.7;">
+        Este navegador não conseguiu criar um contexto WebGL, necessário pra rodar o jogo.<br><br>
+        Se você abriu o arquivo dentro de um app de mensagens (WhatsApp, Telegram, Instagram etc.),
+        toque em "abrir no navegador" ou salve o arquivo e abra-o direto pelo Chrome ou Safari.
+      </div>
+    </div>`;
+    throw new Error('WebGL indisponível — abortando script do jogo.');
+  }
+})();
+
+// captura qualquer erro não tratado e mostra na própria tela, já que em
+// celular não dá pra abrir o console pra ver o que travou o jogo
+(function installErrorOverlay() {
+  let box = null;
+  function show(msg) {
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'fatal-error-box';
+      box.style.cssText = 'position:fixed;left:6px;right:6px;bottom:6px;z-index:99999;background:rgba(15,0,0,.95);' +
+        'color:#ff9a80;border:2px solid #ff3018;padding:10px 12px;font:11px/1.5 monospace;max-height:42vh;' +
+        'overflow:auto;white-space:pre-wrap;word-break:break-word;';
+      document.body.appendChild(box);
+    }
+    const line = document.createElement('div');
+    line.textContent = msg;
+    line.style.marginBottom = '6px';
+    box.appendChild(line);
+  }
+  window.addEventListener('error', e => {
+    show('ERRO: ' + e.message + '\n  em ' + (e.filename || '?').split('/').pop() + ':' + e.lineno + ':' + e.colno);
+  });
+  window.addEventListener('unhandledrejection', e => {
+    const r = e.reason;
+    show('PROMISE REJEITADA: ' + (r && r.message ? r.message : String(r)));
+  });
+})();
 /* ============================================================================
    INFERNO ETERNO — clone retrô de DOOM em Three.js, num único arquivo.
    Tudo procedural: texturas e sprites via Canvas 2D, sons via Web Audio API.
