@@ -177,8 +177,8 @@
   <div class="controls">
     <b>WASD / SETAS</b> mover &nbsp;&bull;&nbsp; <b>SHIFT</b> correr &nbsp;&bull;&nbsp; <b>MOUSE</b> mirar &nbsp;&bull;&nbsp; <b>CLIQUE</b> atirar<br>
     <b>1-5 / RODA DO MOUSE</b> trocar arma &nbsp;&bull;&nbsp; <b>R</b> recarregar &nbsp;&bull;&nbsp; <b>ESC</b> pausar<br><br>
-    Você começa só com soco e pistola — encontre escopeta, metralhadora e lança-foguetes pelo caminho.<br>
-    <b>10 fases</b> cada vez maiores, terminando num <b>chefão</b>. Cuidado com os barris!
+    Você começa com o arsenal completo: soco, pistola, escopeta, metralhadora e lança-foguetes.<br>
+    <b>10 fases</b> cada vez maiores, terminando num <b>chefão</b>. Morrer tenta a fase de novo, sem perder o progresso. Cuidado com os barris!
   </div>
 </div>
 
@@ -197,7 +197,10 @@
 <div id="screen-pause" class="screen hidden">
   <h2>PAUSADO</h2>
   <p>Clique para voltar ao massacre</p>
-  <button class="btn-secondary" id="btn-options-pause">OPÇÕES</button>
+  <div style="display:flex; gap:12px;">
+    <button class="btn-secondary" id="btn-options-pause">OPÇÕES</button>
+    <button class="btn-secondary" id="btn-restart-pause">REINICIAR</button>
+  </div>
 </div>
 
 <div id="screen-options" class="screen hidden">
@@ -379,11 +382,6 @@ function generateLevel(cfg) {
   for (let i = 0; i < nArm; i++) itemTypes.push('armor');
   for (let i = 0; i < nAmmo; i++) itemTypes.push('ammo');
   itemTypes.forEach(type => { const c = takeCell(); if (c) sp.items.push({ type, x: (c.x + 0.5) * CELL, z: (c.z + 0.5) * CELL }); });
-  if (!cfg.boss) { // uma arma nova garantida em fases-chave, pra ter o arsenal completo até a metade da campanha
-    const weaponByLevel = { 0: 'wshotgun', 2: 'wchaingun', 4: 'wrocket' };
-    const wtype = weaponByLevel[cfg.index];
-    if (wtype) { const c = takeCell(); if (c) sp.items.push({ type: wtype, x: (c.x + 0.5) * CELL, z: (c.z + 0.5) * CELL }); }
-  }
 
   return { MW: size, MH: size, grid: g, spawns: sp, floorCells };
 }
@@ -1365,9 +1363,9 @@ let dynamicGroup = null;
 const player = {
   x: 0, z: 0, yaw: 0, pitch: 0, hp: 100, armor: 0, alive: true,
   vx: 0, vz: 0, weapon: 1, cd: 0, fireT: -1, switchT: 0, bob: 0,
-  ammo: { bullets: 40, shells: 0, rockets: 0 },
+  ammo: { bullets: 60, shells: 16, rockets: 6 },
   mag: [0, 12, 6, 40, 0], reloading: false,
-  owned: [true, true, false, false, false],
+  owned: [true, true, true, true, true],
   painSndCd: 0, ouchT: 0, deathT: 0,
   kickPitch: 0, kickYaw: 0, curSpeed: 0, chainHeat: 0
 };
@@ -2096,18 +2094,6 @@ function updateItems(dt, now) {
         player.ammo.rockets = Math.min(25, player.ammo.rockets + 2);
         used = true; msg('MUNIÇÃO COLETADA');
       }
-      else if (it.type === 'wshotgun' && !player.owned[2]) {
-        player.owned[2] = true; player.mag[2] = WEAPONS[2].magSize; player.ammo.shells = Math.min(50, player.ammo.shells + 8);
-        used = true; msg('ESCOPETA ADQUIRIDA!'); selectWeapon(2);
-      }
-      else if (it.type === 'wchaingun' && !player.owned[3]) {
-        player.owned[3] = true; player.mag[3] = WEAPONS[3].magSize; player.ammo.bullets = Math.min(400, player.ammo.bullets + 40);
-        used = true; msg('METRALHADORA ADQUIRIDA!'); selectWeapon(3);
-      }
-      else if (it.type === 'wrocket' && !player.owned[4]) {
-        player.owned[4] = true; player.ammo.rockets = Math.min(25, player.ammo.rockets + 3);
-        used = true; msg('LANÇA-FOGUETES ADQUIRIDO!'); selectWeapon(4);
-      }
       if (used) {
         it.taken = true;
         dynamicGroup.remove(it.sprite); it.sprite.material.dispose();
@@ -2226,7 +2212,7 @@ function frame(now) {
 }
 
 /* ======================== 13) FLUXO DE JOGO ============================== */
-function loadLevel(idx, freshStart) {
+function loadLevel(idx, mode) { // mode: 'fresh' (nova campanha) | 'continue' (avançou de fase) | 'retry' (morreu, tenta a mesma fase de novo)
   currentLevel = idx;
   const cfg = levelConfig(idx);
   const gen = generateLevel(cfg);
@@ -2261,12 +2247,12 @@ function loadLevel(idx, freshStart) {
   player.kickPitch = 0; player.kickYaw = 0; player.curSpeed = 0; player.chainHeat = 0;
   player.reloading = false;
 
-  if (freshStart) {
+  if (mode === 'fresh' || mode === 'retry') {
     player.hp = 100; player.armor = 0; player.alive = true; player.weapon = 1;
-    player.ammo = { bullets: 40, shells: 0, rockets: 0 };
+    player.ammo = { bullets: 60, shells: 16, rockets: 6 };
     player.mag = [0, 12, 6, 40, 0];
-    player.owned = [true, true, false, false, false];
-    campaign.totalKills = 0; campaign.totalItems = 0; campaign.totalTime = 0;
+    player.owned = [true, true, true, true, true];
+    if (mode === 'fresh') { campaign.totalKills = 0; campaign.totalItems = 0; campaign.totalTime = 0; }
   } else {
     player.alive = true;
   }
@@ -2283,23 +2269,31 @@ function loadLevel(idx, freshStart) {
 
 function startGame() {
   initAudio();
-  loadLevel(0, true);
+  loadLevel(0, 'fresh');
   started = true; playing = true;
   startGrace = 0.35;
   $('screen-start').classList.add('hidden');
   $('screen-end').classList.add('hidden');
   $('screen-intermission').classList.add('hidden');
+  $('screen-pause').classList.add('hidden');
   lockPointer();
 }
 
 function advanceLevel() {
   campaign.totalKills += stats.kills; campaign.totalItems += stats.itemsTaken; campaign.totalTime += stats.time;
   player.hp = Math.min(100, player.hp + 25);
-  loadLevel(currentLevel + 1, false);
+  loadLevel(currentLevel + 1, 'continue');
   playing = true;
   lockPointer();
 }
 
+function retryLevel() {
+  loadLevel(currentLevel, 'retry');
+  playing = true;
+  lockPointer();
+}
+
+let lastEndWasDeath = false;
 function killPlayer() {
   if (!player.alive) return;
   player.alive = false;
@@ -2309,9 +2303,11 @@ function killPlayer() {
     if (gameEnded) return;
     gameEnded = true; playing = false;
     document.exitPointerLock && document.exitPointerLock();
+    lastEndWasDeath = true;
     $('end-title').textContent = 'VOCÊ MORREU';
     $('end-title').style.color = '#ff3018';
     $('end-stats').innerHTML = campaignStatsHtml();
+    $('btn-restart').textContent = 'TENTAR NOVAMENTE';
     $('screen-end').classList.remove('hidden');
   }, 1600);
 }
@@ -2327,20 +2323,23 @@ function checkVictory() {
       $('inter-stats').innerHTML = statsHtml();
       $('screen-intermission').classList.remove('hidden');
     } else {
+      lastEndWasDeath = false;
       $('end-title').textContent = 'INFERNO PURIFICADO';
       $('end-title').style.color = '#ffd24a';
       $('end-stats').innerHTML = campaignStatsHtml();
+      $('btn-restart').textContent = 'JOGAR NOVAMENTE';
       $('screen-end').classList.remove('hidden');
     }
   }, 1200);
 }
 
 $('btn-start').addEventListener('click', startGame);
-$('btn-restart').addEventListener('click', startGame);
+$('btn-restart').addEventListener('click', () => { if (lastEndWasDeath) retryLevel(); else startGame(); });
 $('btn-next-level').addEventListener('click', () => {
   $('screen-intermission').classList.add('hidden');
   advanceLevel();
 });
+$('btn-restart-pause').addEventListener('click', e => { e.stopPropagation(); startGame(); });
 
 // ---- menu de opções ----
 const optEls = {
@@ -2383,7 +2382,7 @@ applyFov();
 applyCrt();
 
 // estado inicial: mundo montado para o "modo atração" atrás do menu
-loadLevel(0, true);
+loadLevel(0, 'fresh');
 started = false; playing = false;
 updateHud(); updateFace();
 requestAnimationFrame(frame);
@@ -2399,7 +2398,7 @@ window.__DOOM = {
       ammo: { ...player.ammo }, pos: [player.x, player.z]
     };
   },
-  start: startGame, advanceLevel, loadLevel, player, WEAPONS, selectWeapon, campaign, LEVEL_COUNT, levelConfig,
+  start: startGame, advanceLevel, retryLevel, loadLevel, player, WEAPONS, selectWeapon, campaign, LEVEL_COUNT, levelConfig,
   get enemies() { return enemies; }, get barrels() { return barrels; }, get items() { return items; },
   damageEnemy, damageBarrel, damagePlayer
 };
