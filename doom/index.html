@@ -39,6 +39,15 @@
   #dash-fill { height: 100%; width: 100%; background: #4dd4ff; }
   #dash-fill.ready { background: #ffd24a; }
 
+  /* ---- Combo de abates ---- */
+  #combo-hud {
+    position: fixed; left: 50%; top: 38%; transform: translate(-50%,-50%) scale(.8); z-index: 5;
+    text-align: center; pointer-events: none; opacity: 0; transition: opacity .12s, transform .12s;
+  }
+  #combo-hud.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  #combo-count { font-family: Impact, sans-serif; font-size: 40px; color: #ffd24a; text-shadow: 3px 3px 0 #000, 0 0 16px rgba(255,160,20,.7); letter-spacing: 2px; }
+  #combo-pts { font-size: 14px; color: #ff8a3a; text-shadow: 2px 2px 0 #000; letter-spacing: 2px; margin-top: 2px; }
+
   /* ---- Vinheta ---- */
   #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 2; background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.65) 100%); }
   #crt-overlay {
@@ -56,6 +65,7 @@
 
   /* ---- Indicador de fase ---- */
   #hud-level { position: fixed; top: 186px; right: 12px; width: 168px; z-index: 4; color: #b89a7a; font-size: 12px; letter-spacing: 2px; text-shadow: 2px 2px 0 #000; text-align: center; }
+  #hud-score { position: fixed; top: 206px; right: 12px; width: 168px; z-index: 4; color: #ffd24a; font-size: 15px; font-weight: bold; letter-spacing: 2px; text-shadow: 2px 2px 0 #000; text-align: center; }
 
   /* ---- Minimapa ---- */
   #minimap {
@@ -167,6 +177,11 @@
   }
   #seed-display { color: #ffd24a; }
   .seed-row .btn-secondary { padding: 5px 10px; font-size: 11px; margin-top: 0; }
+
+  /* ---- Desafio diário ---- */
+  #daily-row { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 16px; }
+  #daily-best { font-size: 11px; color: #8a7862; letter-spacing: 1px; }
+  #daily-best b { color: #ffd24a; }
 </style>
 </head>
 <body>
@@ -177,8 +192,10 @@
 <div id="crosshair"></div>
 <div id="dmg-indicator"><div id="dmg-arrow"></div></div>
 <div id="dash-indicator"><div id="dash-fill"></div></div>
+<div id="combo-hud"><div id="combo-count">COMBO x0</div><div id="combo-pts">+0</div></div>
 <canvas id="minimap" width="168" height="168"></canvas>
 <div id="hud-level"></div>
+<div id="hud-score"></div>
 <div id="boss-hud" class="hidden">
   <div id="boss-name">CHEFÃO</div>
   <div id="boss-bar-bg"><div id="boss-bar-fill"></div></div>
@@ -218,6 +235,10 @@
     <button class="btn-secondary" id="btn-options-start">OPÇÕES</button>
     <button class="btn-secondary hidden" id="btn-levelselect-start">SELECIONAR FASE</button>
   </div>
+  <div id="daily-row">
+    <button class="btn-secondary" id="btn-daily">DESAFIO DIÁRIO</button>
+    <div id="daily-best"></div>
+  </div>
   <div class="seed-row">
     <span>SEMENTE:</span>
     <input type="text" id="seed-display" readonly>
@@ -238,6 +259,7 @@
   <div class="title" id="end-title">VITÓRIA</div>
   <div id="end-stats"></div>
   <button class="btn" id="btn-restart">JOGAR NOVAMENTE</button>
+  <button class="btn-secondary hidden" id="btn-end-menu">MENU PRINCIPAL</button>
 </div>
 
 <div id="screen-intermission" class="screen hidden">
@@ -308,7 +330,7 @@ let grid = [];
 let spawns = { player: null, enemies: [], barrels: [], items: [] };
 let TOTAL_MONSTERS = 0, TOTAL_ITEMS = 0, TOTAL_SECRETS = 0;
 let currentLevel = 0;
-const campaign = { totalKills: 0, totalItems: 0, totalTime: 0, totalSecrets: 0 };
+const campaign = { totalKills: 0, totalItems: 0, totalTime: 0, totalSecrets: 0, totalScore: 0 };
 
 // semente customizada via ?seed= na URL — mesma semente = mesma campanha inteira, comparável entre jogadores
 function parseUrlSeed() {
@@ -1508,10 +1530,10 @@ function los(x1, z1, x2, z2) { // linha de visão pela grade
 
 /* ========================== 8) ENTIDADES ================================= */
 const ENEMY_DEFS = {
-  zombie: { hp: 30, speed: 2.2, radius: 0.5, height: 2.0, sight: 26, atkRange: 18, windup: 0.55, cd: [1.1, 2.0], dmg: [4, 13], painChance: 0.6, pitch: 150, scale: [2.0, 2.1], fly: false },
-  demon:  { hp: 90, speed: 5.4, radius: 0.65, height: 2.0, sight: 30, atkRange: 2.3, windup: 0.35, cd: [0.7, 1.1], dmg: [8, 22], painChance: 0.35, pitch: 90, scale: [2.4, 2.3], fly: false },
-  caco:   { hp: 110, speed: 2.7, radius: 0.75, height: 1.9, sight: 34, atkRange: 24, windup: 0.6, cd: [1.6, 2.6], dmg: [10, 22], painChance: 0.3, pitch: 60, scale: [2.5, 2.5], fly: true, hover: 1.9 },
-  boss:   { hp: 2200, speed: 3.4, radius: 1.6, height: 3.4, sight: 60, atkRange: 30, meleeRange: 3.2, windup: 0.5, cd: [0.6, 1.3], dmg: [18, 34], painChance: 0.08, pitch: 40, scale: [5.6, 5.6], fly: false, boss: true }
+  zombie: { hp: 30, speed: 2.2, radius: 0.5, height: 2.0, sight: 26, atkRange: 18, windup: 0.55, cd: [1.1, 2.0], dmg: [4, 13], painChance: 0.6, pitch: 150, scale: [2.0, 2.1], fly: false, score: 100 },
+  demon:  { hp: 90, speed: 5.4, radius: 0.65, height: 2.0, sight: 30, atkRange: 2.3, windup: 0.35, cd: [0.7, 1.1], dmg: [8, 22], painChance: 0.35, pitch: 90, scale: [2.4, 2.3], fly: false, score: 200 },
+  caco:   { hp: 110, speed: 2.7, radius: 0.75, height: 1.9, sight: 34, atkRange: 24, windup: 0.6, cd: [1.6, 2.6], dmg: [10, 22], painChance: 0.3, pitch: 60, scale: [2.5, 2.5], fly: true, hover: 1.9, score: 300 },
+  boss:   { hp: 2200, speed: 3.4, radius: 1.6, height: 3.4, sight: 60, atkRange: 30, meleeRange: 3.2, windup: 0.5, cd: [0.6, 1.3], dmg: [18, 34], painChance: 0.08, pitch: 40, scale: [5.6, 5.6], fly: false, boss: true, score: 5000 }
 };
 const DIFFICULTY = {
   facil:   { dmgMult: 0.65, hpMult: 0.8 },
@@ -1533,8 +1555,40 @@ const player = {
   kickPitch: 0, kickYaw: 0, curSpeed: 0, chainHeat: 0,
   dashCd: 0, dashT: 0, dashDirX: 0, dashDirZ: -1
 };
-const stats = { time: 0, kills: 0, shots: 0, hits: 0, itemsTaken: 0, secretsFound: 0 };
+const stats = { time: 0, kills: 0, shots: 0, hits: 0, itemsTaken: 0, secretsFound: 0, score: 0 };
 let playing = false, started = false, gameEnded = false;
+// ---- combo de abates ----
+const COMBO_WINDOW = 2.5;
+let combo = 0, comboBest = 0, comboTimer = 0;
+function comboMultiplier(c) { return 1 + Math.min(c - 1, 9) * 0.2; }
+const comboHudEl = $('combo-hud'), comboCountEl = $('combo-count'), comboPtsEl = $('combo-pts');
+let comboHudTimer = null;
+function registerKillScore(def) {
+  combo++; comboTimer = COMBO_WINDOW;
+  if (combo > comboBest) comboBest = combo;
+  const mult = comboMultiplier(combo);
+  const pts = Math.round((def.score || 100) * mult);
+  stats.score += pts;
+  updateHud();
+  if (combo >= 2) {
+    comboCountEl.textContent = 'COMBO x' + combo;
+    comboPtsEl.textContent = '+' + pts + (mult > 1 ? ' (x' + mult.toFixed(1) + ')' : '');
+    comboHudEl.classList.add('show');
+    clearTimeout(comboHudTimer);
+    comboHudTimer = setTimeout(() => comboHudEl.classList.remove('show'), 1100);
+  }
+}
+// ---- desafio diário ----
+let dailyMode = false;
+function dailySeed(d) { d = d || new Date(); return (d.getFullYear()) * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); }
+function dailyKey(d) { d = d || new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function loadDailyRecords() {
+  try { return JSON.parse(localStorage.getItem('infernoEterno.daily')) || {}; } catch (e) { return {}; }
+}
+function saveDailyRecords() {
+  try { localStorage.setItem('infernoEterno.daily', JSON.stringify(dailyRecords)); } catch (e) {}
+}
+let dailyRecords = loadDailyRecords();
 let dmgFlash = 0, pickFlash = 0, shake = 0, startGrace = 0, ambientSndCd = rnd(3, 6), wasPaused = false;
 
 function spawnEnemy(sp) {
@@ -1808,6 +1862,7 @@ function damageEnemy(e, dmg) {
     spawnBlood(e.x, e.def.fly ? e.y : 1.2, e.z, 14);
     SFX.enemyDeath({ x: e.x, z: e.z }, e.def.pitch);
     stats.kills++;
+    registerKillScore(e.def);
     checkVictory();
   } else if (Math.random() < e.def.painChance) {
     e.painT = 0.4; e.windupT = -1;
@@ -2069,7 +2124,7 @@ function updateEnemy(e, dt) {
 /* ===================== 11) HUD, MINIMAPA E TELAS ========================= */
 const hudEls = {
   ammo: $('hud-ammo'), health: $('hud-health'), armor: $('hud-armor'),
-  wname: $('hud-weapon-name'), reserves: $('hud-reserves'),
+  wname: $('hud-weapon-name'), reserves: $('hud-reserves'), score: $('hud-score'),
   arms: [0, 1, 2, 3, 4].map(i => $('arm-' + i))
 };
 const faceCtx = $('hud-face').getContext('2d');
@@ -2083,6 +2138,7 @@ function updateHud() {
   hudEls.armor.textContent = Math.max(0, Math.round(player.armor)) + '%';
   hudEls.wname.textContent = w.name;
   hudEls.reserves.textContent = `B:${player.ammo.bullets} C:${player.ammo.shells} F:${player.ammo.rockets}`;
+  hudEls.score.textContent = 'PONTOS: ' + stats.score;
   hudEls.arms.forEach((el, i) => {
     el.classList.toggle('on', i === player.weapon);
     el.classList.toggle('locked', !player.owned[i]);
@@ -2232,14 +2288,15 @@ function fmtTime(s) {
 }
 function statsHtml() {
   const acc = stats.shots > 0 ? Math.round(stats.hits / stats.shots * 100) : 0;
-  return `TEMPO: ${fmtTime(stats.time)}<br>DEMÔNIOS MORTOS: ${stats.kills} / ${TOTAL_MONSTERS}<br>ITENS COLETADOS: ${stats.itemsTaken} / ${TOTAL_ITEMS}<br>SEGREDOS: ${stats.secretsFound} / ${TOTAL_SECRETS}<br>PRECISÃO: ${acc}%`;
+  return `TEMPO: ${fmtTime(stats.time)}<br>DEMÔNIOS MORTOS: ${stats.kills} / ${TOTAL_MONSTERS}<br>ITENS COLETADOS: ${stats.itemsTaken} / ${TOTAL_ITEMS}<br>SEGREDOS: ${stats.secretsFound} / ${TOTAL_SECRETS}<br>PRECISÃO: ${acc}%<br>PONTOS: ${stats.score} (MAIOR COMBO: x${comboBest})`;
 }
 function campaignStatsHtml() {
   const kills = campaign.totalKills + stats.kills;
   const items = campaign.totalItems + stats.itemsTaken;
   const time = campaign.totalTime + stats.time;
   const secrets = campaign.totalSecrets + stats.secretsFound;
-  return `FASE ALCANÇADA: ${currentLevel + 1} / ${LEVEL_COUNT}<br>TEMPO TOTAL: ${fmtTime(time)}<br>DEMÔNIOS ABATIDOS: ${kills}<br>ITENS COLETADOS: ${items}<br>SEGREDOS: ${secrets}`;
+  const score = campaign.totalScore + stats.score;
+  return `FASE ALCANÇADA: ${currentLevel + 1} / ${LEVEL_COUNT}<br>TEMPO TOTAL: ${fmtTime(time)}<br>DEMÔNIOS ABATIDOS: ${kills}<br>ITENS COLETADOS: ${items}<br>SEGREDOS: ${secrets}<br>PONTOS: ${score}`;
 }
 
 /* ======================= 12) LOOP PRINCIPAL ============================== */
@@ -2377,6 +2434,7 @@ function frame(now) {
   }
   if (playing && !paused) {
     stats.time += player.alive ? dt : 0;
+    if (combo > 0) { comboTimer -= dt; if (comboTimer <= 0) combo = 0; }
     if (startGrace > 0) startGrace -= dt;
     if (player.painSndCd > 0) player.painSndCd -= dt;
     if (player.ouchT > 0) player.ouchT -= dt;
@@ -2506,12 +2564,13 @@ function loadLevel(idx, mode) { // mode: 'fresh' (nova campanha) | 'continue' (a
     player.ammo = { bullets: 60, shells: 16, rockets: 6 };
     player.mag = [0, 12, 6, 40, 0];
     player.owned = [true, true, true, true, true];
-    if (mode === 'fresh') { campaign.totalKills = 0; campaign.totalItems = 0; campaign.totalTime = 0; campaign.totalSecrets = 0; }
+    if (mode === 'fresh') { campaign.totalKills = 0; campaign.totalItems = 0; campaign.totalTime = 0; campaign.totalSecrets = 0; campaign.totalScore = 0; }
   } else {
     player.alive = true;
   }
 
-  stats.time = 0; stats.kills = 0; stats.shots = 0; stats.hits = 0; stats.itemsTaken = 0; stats.secretsFound = 0;
+  stats.time = 0; stats.kills = 0; stats.shots = 0; stats.hits = 0; stats.itemsTaken = 0; stats.secretsFound = 0; stats.score = 0;
+  combo = 0; comboBest = 0; comboTimer = 0; comboHudEl.classList.remove('show');
   dmgFlash = 0; pickFlash = 0; shake = 0; lastFace = -1;
   gameEnded = false;
   firing = false;
@@ -2539,7 +2598,7 @@ function startAtLevel(idx) {
 }
 
 function advanceLevel() {
-  campaign.totalKills += stats.kills; campaign.totalItems += stats.itemsTaken; campaign.totalTime += stats.time; campaign.totalSecrets += stats.secretsFound;
+  campaign.totalKills += stats.kills; campaign.totalItems += stats.itemsTaken; campaign.totalTime += stats.time; campaign.totalSecrets += stats.secretsFound; campaign.totalScore += stats.score;
   player.hp = Math.min(100, player.hp + 25);
   loadLevel(currentLevel + 1, 'continue');
   if (currentLevel > unlockedLevel) { unlockedLevel = currentLevel; saveUnlockedLevel(unlockedLevel); }
@@ -2564,12 +2623,30 @@ function killPlayer() {
     gameEnded = true; playing = false;
     document.exitPointerLock && document.exitPointerLock();
     lastEndWasDeath = true;
+    if (dailyMode) { endDailyChallenge(false); return; }
     $('end-title').textContent = 'VOCÊ MORREU';
     $('end-title').style.color = '#ff3018';
     $('end-stats').innerHTML = campaignStatsHtml();
     $('btn-restart').textContent = 'TENTAR NOVAMENTE';
+    $('btn-end-menu').classList.add('hidden');
     $('screen-end').classList.remove('hidden');
   }, 1600);
+}
+
+function endDailyChallenge(won) {
+  lastEndWasDeath = !won;
+  const key = dailyKey();
+  const prev = dailyRecords[key];
+  const isNewBest = !prev || stats.score > prev.score;
+  if (isNewBest) { dailyRecords[key] = { score: stats.score, time: stats.time, won }; saveDailyRecords(); }
+  $('end-title').textContent = won ? 'DESAFIO CONCLUÍDO' : 'VOCÊ MORREU';
+  $('end-title').style.color = won ? '#ffd24a' : '#ff3018';
+  $('end-stats').innerHTML = `PONTUAÇÃO: ${stats.score}<br>MAIOR COMBO: x${comboBest}<br>TEMPO: ${fmtTime(stats.time)}<br>DEMÔNIOS ABATIDOS: ${stats.kills} / ${TOTAL_MONSTERS}` +
+    (isNewBest ? '<br><span class="new-best">NOVO RECORDE DO DIA!</span>' : `<br>MELHOR DO DIA: ${prev.score} pts`);
+  $('btn-restart').textContent = 'TENTAR NOVAMENTE';
+  $('btn-end-menu').classList.remove('hidden');
+  $('screen-end').classList.remove('hidden');
+  refreshDailyUI();
 }
 
 function checkVictory() {
@@ -2579,6 +2656,7 @@ function checkVictory() {
     gameEnded = true; playing = false;
     document.exitPointerLock && document.exitPointerLock();
     const isNewBest = recordBestTime(currentLevel, stats.time);
+    if (dailyMode) { endDailyChallenge(true); return; }
     if (currentLevel < LEVEL_COUNT - 1) {
       $('inter-title').textContent = levelConfig(currentLevel).name + ' CONCLUÍDA';
       $('inter-stats').innerHTML = statsHtml() + (isNewBest ? '<br><span class="new-best">NOVO RECORDE!</span>' : '');
@@ -2589,6 +2667,7 @@ function checkVictory() {
       $('end-title').style.color = '#ffd24a';
       $('end-stats').innerHTML = campaignStatsHtml();
       $('btn-restart').textContent = 'JOGAR NOVAMENTE';
+      $('btn-end-menu').classList.add('hidden');
       $('screen-end').classList.remove('hidden');
     }
   }, 1200);
@@ -2711,6 +2790,28 @@ $('btn-seed-use').addEventListener('click', () => {
 });
 refreshSeedUI();
 
+// ---- desafio diário ----
+function refreshDailyUI() {
+  const rec = dailyRecords[dailyKey()];
+  $('daily-best').innerHTML = rec ? `MELHOR HOJE: <b>${rec.score} pts</b>${rec.won ? ' (concluído)' : ''}` : 'SEJA O PRIMEIRO A JOGAR HOJE';
+}
+$('btn-daily').addEventListener('click', () => {
+  dailyMode = true;
+  customSeed = dailySeed();
+  startAtLevel(0);
+});
+$('btn-end-menu').addEventListener('click', () => {
+  dailyMode = false;
+  customSeed = parseUrlSeed();
+  $('screen-end').classList.add('hidden');
+  $('btn-end-menu').classList.add('hidden');
+  refreshSeedUI();
+  loadLevel(0, 'fresh');
+  started = false; playing = false;
+  $('screen-start').classList.remove('hidden');
+});
+refreshDailyUI();
+
 // estado inicial: mundo montado para o "modo atração" atrás do menu
 loadLevel(0, 'fresh');
 started = false; playing = false;
@@ -2722,7 +2823,7 @@ window.__DOOM = {
   get state() {
     return {
       playing, started, hp: player.hp, armor: player.armor, level: currentLevel + 1, levelCount: LEVEL_COUNT,
-      kills: stats.kills, total: TOTAL_MONSTERS,
+      kills: stats.kills, total: TOTAL_MONSTERS, score: stats.score,
       enemiesAlive: enemies.filter(e => e.state !== 'dead' && e.state !== 'dying').length,
       weapon: WEAPONS[player.weapon].name, weaponIdx: player.weapon, owned: player.owned.slice(),
       ammo: { ...player.ammo }, pos: [player.x, player.z]
@@ -2731,6 +2832,8 @@ window.__DOOM = {
   start: startGame, startAtLevel, advanceLevel, retryLevel, loadLevel, player, WEAPONS, selectWeapon, campaign, LEVEL_COUNT, levelConfig,
   get enemies() { return enemies; }, get barrels() { return barrels; }, get items() { return items; },
   get unlockedLevel() { return unlockedLevel; }, settings,
+  get combo() { return combo; }, get comboBest() { return comboBest; },
+  get dailyMode() { return dailyMode; }, dailySeed, dailyKey,
   damageEnemy, damageBarrel, damagePlayer
 };
 </script>
