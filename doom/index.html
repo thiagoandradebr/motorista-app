@@ -182,6 +182,26 @@
   #daily-row { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 16px; }
   #daily-best { font-size: 11px; color: #8a7862; letter-spacing: 1px; }
   #daily-best b { color: #ffd24a; }
+
+  /* ---- Controles touch ---- */
+  #touch-controls { position: fixed; inset: 0; z-index: 7; pointer-events: none; }
+  #touch-controls.hidden { display: none; }
+  .touch-btn {
+    position: fixed; pointer-events: auto; touch-action: none; -webkit-user-select: none; user-select: none;
+    display: flex; align-items: center; justify-content: center; border-radius: 50%;
+    background: rgba(60,20,14,.42); border: 2px solid rgba(255,180,140,.4);
+    color: #ffe9c9; font-family: Impact, sans-serif; letter-spacing: 1px; text-shadow: 2px 2px 0 #000;
+  }
+  .touch-btn.active { background: rgba(255,90,40,.55); border-color: #ffd24a; }
+  #touch-pause { top: 10px; left: 10px; width: 34px; height: 34px; font-size: 11px; z-index: 8; }
+  #touch-joystick-base { bottom: 110px; left: 24px; width: 122px; height: 122px; background: rgba(255,255,255,.07); border: 2px solid rgba(255,255,255,.28); }
+  #touch-joystick-knob {
+    position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; border-radius: 50%;
+    background: rgba(255,255,255,.35); transform: translate(-50%,-50%); pointer-events: none;
+  }
+  #touch-fire { bottom: 100px; right: 20px; width: 84px; height: 84px; font-size: 14px; background: rgba(180,10,0,.4); border-color: rgba(255,110,60,.55); }
+  #touch-dash { bottom: 112px; right: 112px; width: 50px; height: 50px; font-size: 19px; }
+  #touch-reload { bottom: 100px; right: 170px; width: 50px; height: 50px; font-size: 19px; }
 </style>
 </head>
 <body>
@@ -203,6 +223,14 @@
 <div id="msgs"></div>
 <div id="flash-damage"></div>
 <div id="flash-pickup"></div>
+
+<div id="touch-controls" class="hidden">
+  <div id="touch-pause" class="touch-btn">II</div>
+  <div id="touch-joystick-base" class="touch-btn"><div id="touch-joystick-knob"></div></div>
+  <div id="touch-reload" class="touch-btn">⟳</div>
+  <div id="touch-dash" class="touch-btn">»</div>
+  <div id="touch-fire" class="touch-btn">TIRO</div>
+</div>
 
 <div id="hud">
   <div class="hud-box">
@@ -284,6 +312,7 @@
   <div class="opt-row"><label>SENSIBILIDADE</label><input type="range" id="opt-sens" min="40" max="250" value="100"><span id="opt-sens-val">100%</span></div>
   <div class="opt-row"><label>CAMPO DE VISÃO</label><input type="range" id="opt-fov" min="65" max="100" value="75"><span id="opt-fov-val">75°</span></div>
   <div class="opt-row"><label>EFEITO CRT</label><input type="checkbox" id="opt-crt" checked><span></span></div>
+  <div class="opt-row"><label>CONTROLES TOUCH</label><input type="checkbox" id="opt-touch"><span></span></div>
   <div class="opt-row"><label>DIFICULDADE</label><select id="opt-diff"><option value="facil">FÁCIL</option><option value="normal" selected>NORMAL</option><option value="dificil">DIFÍCIL</option></select><span></span></div>
   <button class="btn" id="btn-options-back" style="margin-top:26px;">VOLTAR</button>
 </div>
@@ -1044,13 +1073,15 @@ const WEAPON_FRAMES = [
 const FACES = [drawFace(0), drawFace(1), drawFace(2), drawFace(3), drawFace(4)];
 
 /* ========================== OPÇÕES / CONFIGURAÇÕES ======================= */
-const DEFAULT_SETTINGS = { musicVol: 0.3, sfxVol: 0.9, sensMult: 1.0, fov: 75, crt: true, difficulty: 'normal' };
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const DEFAULT_SETTINGS = { musicVol: 0.3, sfxVol: 0.9, sensMult: 1.0, fov: 75, crt: true, difficulty: 'normal', touchControls: null };
 let settings = { ...DEFAULT_SETTINGS };
 function loadSettings() {
   try {
     const raw = localStorage.getItem('infernoEterno.settings');
     if (raw) settings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
   } catch (e) { /* localStorage indisponível (ex.: iframe restrito) */ }
+  if (settings.touchControls === null || settings.touchControls === undefined) settings.touchControls = isTouchDevice;
 }
 function saveSettings() {
   try { localStorage.setItem('infernoEterno.settings', JSON.stringify(settings)); } catch (e) {}
@@ -1268,9 +1299,18 @@ document.addEventListener('pointerlockchange', () => {
   else if (playing && lockEverWorked && player.alive) $('screen-pause').classList.remove('hidden');
 });
 function lockPointer() {
+  if (settings.touchControls) return; // sem cursor pra travar num dispositivo touch
   try { renderer.domElement.requestPointerLock(); } catch (e) { /* headless / não suportado */ }
 }
-$('screen-pause').addEventListener('click', lockPointer);
+$('screen-pause').addEventListener('click', () => {
+  if (settings.touchControls) {
+    manualPause = false;
+    $('screen-pause').classList.add('hidden');
+    resetRestartPauseConfirm();
+  } else {
+    lockPointer();
+  }
+});
 
 // ---- gamepad (padrão Xbox): stick esq. move, dir. mira, RT/A atira, X recarrega, LB/RB troca arma, Start pausa ----
 const GP_DEADZONE = 0.18, GP_LOOK_SPEED = 2.6;
@@ -1302,6 +1342,90 @@ function pollGamepad(dt) {
   }
   gpPrevButtons = btn.map(b => !!b.pressed);
 }
+
+// ---- controles touch (mobile): joystick de movimento, arrastar pra mirar, botões de tiro/dash/recarga/pausa ----
+let manualPause = false;
+let touchMove = { forward: 0, strafe: 0 }, touchActive = false, touchRun = false, touchFiring = false;
+let joystickTouchId = null, joystickCenterX = 0, joystickCenterY = 0;
+let lookTouchId = null, lookLastX = 0, lookLastY = 0;
+const touchJoystickBase = $('touch-joystick-base'), touchJoystickKnob = $('touch-joystick-knob');
+const JOYSTICK_RADIUS = 46;
+
+function applyTouchControls() {
+  $('touch-controls').classList.toggle('hidden', !settings.touchControls);
+}
+
+function resetJoystick() {
+  joystickTouchId = null;
+  touchMove.forward = 0; touchMove.strafe = 0; touchActive = false; touchRun = false;
+  touchJoystickKnob.style.transform = 'translate(-50%,-50%)';
+}
+
+touchJoystickBase.addEventListener('touchstart', e => {
+  e.preventDefault(); e.stopPropagation();
+  if (joystickTouchId != null) return;
+  const t = e.changedTouches[0];
+  const rect = touchJoystickBase.getBoundingClientRect();
+  joystickCenterX = rect.left + rect.width / 2; joystickCenterY = rect.top + rect.height / 2;
+  joystickTouchId = t.identifier;
+}, { passive: false });
+
+document.addEventListener('touchmove', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joystickTouchId) {
+      e.preventDefault();
+      let dx = t.clientX - joystickCenterX, dy = t.clientY - joystickCenterY;
+      const d = Math.hypot(dx, dy);
+      if (d > JOYSTICK_RADIUS) { dx = dx / d * JOYSTICK_RADIUS; dy = dy / d * JOYSTICK_RADIUS; }
+      touchJoystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+      touchMove.strafe = dx / JOYSTICK_RADIUS; touchMove.forward = -dy / JOYSTICK_RADIUS;
+      touchActive = true; touchRun = Math.hypot(touchMove.forward, touchMove.strafe) > 0.85;
+    } else if (t.identifier === lookTouchId) {
+      e.preventDefault();
+      if (playing) {
+        const s = 0.0032 * settings.sensMult;
+        player.yaw -= (t.clientX - lookLastX) * s;
+        player.pitch -= (t.clientY - lookLastY) * s;
+        player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch));
+      }
+      lookLastX = t.clientX; lookLastY = t.clientY;
+    }
+  }
+}, { passive: false });
+
+function releaseTouch(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joystickTouchId) resetJoystick();
+    else if (t.identifier === lookTouchId) lookTouchId = null;
+  }
+}
+document.addEventListener('touchend', releaseTouch, { passive: false });
+document.addEventListener('touchcancel', releaseTouch, { passive: false });
+
+// qualquer toque que não caiu em um botão vira "olhar" (arrastar pra mirar)
+document.addEventListener('touchstart', e => {
+  if (!settings.touchControls || !playing) return;
+  for (const t of e.changedTouches) {
+    if (lookTouchId == null) { lookTouchId = t.identifier; lookLastX = t.clientX; lookLastY = t.clientY; }
+  }
+}, { passive: false });
+
+function touchBtn(id, onStart) {
+  const el = $(id);
+  el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); el.classList.add('active'); onStart(); }, { passive: false });
+  el.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); el.classList.remove('active'); }, { passive: false });
+  el.addEventListener('touchcancel', () => el.classList.remove('active'));
+}
+touchBtn('touch-fire', () => { touchFiring = true; });
+$('touch-fire').addEventListener('touchend', () => { touchFiring = false; }, { passive: false });
+$('touch-fire').addEventListener('touchcancel', () => { touchFiring = false; });
+touchBtn('touch-dash', () => tryDash());
+touchBtn('touch-reload', () => tryReload());
+touchBtn('touch-pause', () => {
+  if (!playing || !player.alive) return;
+  manualPause = true;
+  $('screen-pause').classList.remove('hidden');
+});
 
 /* ========================= 6) CENA THREE.JS ============================== */
 const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -2127,6 +2251,9 @@ const hudEls = {
   wname: $('hud-weapon-name'), reserves: $('hud-reserves'), score: $('hud-score'),
   arms: [0, 1, 2, 3, 4].map(i => $('arm-' + i))
 };
+hudEls.arms.forEach((el, i) => {
+  el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); selectWeapon(i); }, { passive: false });
+});
 const faceCtx = $('hud-face').getContext('2d');
 let lastFace = -1;
 
@@ -2314,7 +2441,7 @@ function updatePlayer(dt) {
     const dspd = Math.hypot(player.vx, player.vz);
     player.bob += dspd * dt * 1.7;
     player.curSpeed = dspd;
-    if (firing || gpFiring) tryFire();
+    if (firing || gpFiring || touchFiring) tryFire();
     return dspd;
   }
   let f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
@@ -2324,6 +2451,11 @@ function updatePlayer(dt) {
     f = Math.max(-1, Math.min(1, f + gpMove.forward));
     s = Math.max(-1, Math.min(1, s + gpMove.strafe));
     run = run || gpRun;
+  }
+  if (touchActive) {
+    f = Math.max(-1, Math.min(1, f + touchMove.forward));
+    s = Math.max(-1, Math.min(1, s + touchMove.strafe));
+    run = run || touchRun;
   }
   const speed = run ? 8.4 : 5.3;
   const fwx = -Math.sin(player.yaw), fwz = -Math.cos(player.yaw);
@@ -2338,7 +2470,7 @@ function updatePlayer(dt) {
   const spd = Math.hypot(player.vx, player.vz);
   player.bob += spd * dt * 1.7;
   player.curSpeed = spd;
-  if (firing || gpFiring) tryFire();
+  if (firing || gpFiring || touchFiring) tryFire();
   return spd;
 }
 
@@ -2422,7 +2554,7 @@ function frame(now) {
     return;
   }
 
-  const paused = playing && lockEverWorked && !locked && player.alive;
+  const paused = playing && player.alive && (settings.touchControls ? manualPause : (lockEverWorked && !locked));
   if (paused !== wasPaused) {
     wasPaused = paused;
     if (AC && masterGain) {
@@ -2573,7 +2705,7 @@ function loadLevel(idx, mode) { // mode: 'fresh' (nova campanha) | 'continue' (a
   combo = 0; comboBest = 0; comboTimer = 0; comboHudEl.classList.remove('show');
   dmgFlash = 0; pickFlash = 0; shake = 0; lastFace = -1;
   gameEnded = false;
-  firing = false;
+  firing = false; touchFiring = false; manualPause = false; resetJoystick();
   bossHudShown = false; bossHudEl.classList.add('hidden');
   $('hud-level').textContent = cfg.boss ? `${cfg.name} — ${cfg.n}/${LEVEL_COUNT}` : `FASE ${cfg.n}/${LEVEL_COUNT}`;
   updateHud(); updateFace(); drawMinimap();
@@ -2704,7 +2836,7 @@ const optEls = {
   sfx: $('opt-sfx'), sfxVal: $('opt-sfx-val'),
   sens: $('opt-sens'), sensVal: $('opt-sens-val'),
   fov: $('opt-fov'), fovVal: $('opt-fov-val'),
-  crt: $('opt-crt'), diff: $('opt-diff')
+  crt: $('opt-crt'), diff: $('opt-diff'), touch: $('opt-touch')
 };
 function syncOptionsUI() {
   optEls.music.value = Math.round(settings.musicVol * 100); optEls.musicVal.textContent = optEls.music.value + '%';
@@ -2713,6 +2845,7 @@ function syncOptionsUI() {
   optEls.fov.value = settings.fov; optEls.fovVal.textContent = settings.fov + '°';
   optEls.crt.checked = settings.crt;
   optEls.diff.value = settings.difficulty;
+  optEls.touch.checked = settings.touchControls;
 }
 function applyCrt() { $('crt-overlay').classList.toggle('hidden', !settings.crt); }
 optEls.music.addEventListener('input', () => { settings.musicVol = optEls.music.value / 100; optEls.musicVal.textContent = optEls.music.value + '%'; applyAudioSettings(); saveSettings(); });
@@ -2721,6 +2854,7 @@ optEls.sens.addEventListener('input', () => { settings.sensMult = optEls.sens.va
 optEls.fov.addEventListener('input', () => { settings.fov = parseInt(optEls.fov.value, 10); optEls.fovVal.textContent = settings.fov + '°'; applyFov(); saveSettings(); });
 optEls.crt.addEventListener('change', () => { settings.crt = optEls.crt.checked; applyCrt(); saveSettings(); });
 optEls.diff.addEventListener('change', () => { settings.difficulty = optEls.diff.value; saveSettings(); });
+optEls.touch.addEventListener('change', () => { settings.touchControls = optEls.touch.checked; applyTouchControls(); saveSettings(); });
 
 let optionsReturnTo = 'start';
 function openOptions(from, e) {
@@ -2739,6 +2873,7 @@ $('btn-options-back').addEventListener('click', e => {
 });
 applyFov();
 applyCrt();
+applyTouchControls();
 
 // ---- seleção de fase ----
 function renderLevelGrid() {
@@ -2834,6 +2969,10 @@ window.__DOOM = {
   get unlockedLevel() { return unlockedLevel; }, settings,
   get combo() { return combo; }, get comboBest() { return comboBest; },
   get dailyMode() { return dailyMode; }, dailySeed, dailyKey,
+  get isTouchDevice() { return isTouchDevice; },
+  get touchMove() { return { ...touchMove }; }, get touchActive() { return touchActive; },
+  get touchFiring() { return touchFiring; }, get manualPause() { return manualPause; },
+  get paused() { return wasPaused; }, applyTouchControls, tryDash, tryReload,
   damageEnemy, damageBarrel, damagePlayer
 };
 </script>
