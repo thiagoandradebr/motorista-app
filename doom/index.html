@@ -272,7 +272,7 @@ function levelConfig(i) { // i: 0..LEVEL_COUNT-1
     demons: boss ? 2 : 1 + Math.floor(i * 0.75),
     cacos: boss ? 2 : (i >= 2 ? 1 + Math.floor((i - 2) * 0.55) : 0),
     barrels: boss ? 4 : 2 + Math.floor(i * 0.55),
-    items: boss ? 4 : 5 + Math.floor(i * 0.65),
+    items: boss ? 8 : 10 + Math.floor(i * 1.3),
     boss, arena: boss,
     seed: 90041 + i * 7919
   };
@@ -377,10 +377,14 @@ function generateLevel(cfg) {
   enemyTypes.forEach(type => { const c = takeCell(); if (c) sp.enemies.push({ type, x: (c.x + 0.5) * CELL, z: (c.z + 0.5) * CELL }); });
   for (let i = 0; i < cfg.barrels; i++) { const c = takeCell(); if (c) sp.barrels.push({ x: (c.x + 0.5) * CELL, z: (c.z + 0.5) * CELL }); }
   const itemTypes = [];
-  const nMed = Math.ceil(cfg.items * 0.4), nArm = Math.ceil(cfg.items * 0.25), nAmmo = cfg.items - nMed - nArm;
+  const nMed = Math.ceil(cfg.items * 0.25), nArm = Math.ceil(cfg.items * 0.15), nAmmo = Math.ceil(cfg.items * 0.25);
+  const nShell = Math.ceil(cfg.items * 0.12), nBullet = Math.ceil(cfg.items * 0.12), nRocket = Math.max(1, cfg.items - nMed - nArm - nAmmo - nShell - nBullet);
   for (let i = 0; i < nMed; i++) itemTypes.push('medkit');
   for (let i = 0; i < nArm; i++) itemTypes.push('armor');
   for (let i = 0; i < nAmmo; i++) itemTypes.push('ammo');
+  for (let i = 0; i < nShell; i++) itemTypes.push('wshotgun');
+  for (let i = 0; i < nBullet; i++) itemTypes.push('wchaingun');
+  for (let i = 0; i < nRocket; i++) itemTypes.push('wrocket');
   itemTypes.forEach(type => { const c = takeCell(); if (c) sp.items.push({ type, x: (c.x + 0.5) * CELL, z: (c.z + 0.5) * CELL }); });
 
   return { MW: size, MH: size, grid: g, spawns: sp, floorCells };
@@ -2093,6 +2097,15 @@ function updateItems(dt, now) {
         player.ammo.shells = Math.min(50, player.ammo.shells + 8);
         player.ammo.rockets = Math.min(25, player.ammo.rockets + 2);
         used = true; msg('MUNIÇÃO COLETADA');
+      }
+      else if (it.type === 'wshotgun' && player.ammo.shells < 50) {
+        player.ammo.shells = Math.min(50, player.ammo.shells + 14); used = true; msg('CARTUCHOS DE ESCOPETA');
+      }
+      else if (it.type === 'wchaingun' && player.ammo.bullets < 400) {
+        player.ammo.bullets = Math.min(400, player.ammo.bullets + 60); used = true; msg('MUNIÇÃO DE METRALHADORA');
+      }
+      else if (it.type === 'wrocket' && player.ammo.rockets < 25) {
+        player.ammo.rockets = Math.min(25, player.ammo.rockets + 4); used = true; msg('FOGUETES ENCONTRADOS');
       }
       if (used) {
         it.taken = true;
